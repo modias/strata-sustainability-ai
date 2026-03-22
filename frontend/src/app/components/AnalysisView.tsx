@@ -1,10 +1,9 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useLayoutEffect, useRef, useCallback } from "react";
 import { useParams, useNavigate } from "react-router";
 import { ArrowLeft, Download, MapPin, Building2, AlertTriangle } from "lucide-react";
 import { Button } from "./ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
 import { Badge } from "./ui/badge";
-import { Progress } from "./ui/progress";
 import { AgentCard } from "./AgentCard";
 import { VerdictCard } from "./VerdictCard";
 import { RadarChart } from "./RadarChart";
@@ -44,8 +43,8 @@ const STREAM_DEMO_TARGET: Record<string, string> = {
   "hub-boston-ma": "hub-boston-ma",
   "hub-new-york-ny": "hub-new-york-ny",
   "hub-san-francisco-ca": "hub-san-francisco-ca",
-  "hub-nyc-ny": "hub-nyc-ny",
-  "hub-sf-bay-ca": "hub-sf-bay-ca",
+  "hub-nyc-ny": "hub-new-york-ny",
+  "hub-sf-bay-ca": "hub-san-francisco-ca",
   "hub-seattle-wa": "hub-seattle-wa",
   "hub-washington-dc": "hub-washington-dc",
   unilever: "unilever",
@@ -53,23 +52,46 @@ const STREAM_DEMO_TARGET: Record<string, string> = {
   "east-austin": "east-austin",
 };
 
+/** Verdict accent colors (earth / sustainability palette; mirrors VerdictCard). */
+const VERDICT_THEME: Record<Verdict, { text: string; surface: string }> = {
+  IMPROVING: { text: "text-emerald-400", surface: "bg-emerald-400/10 border-emerald-400/30" },
+  DECLINING: { text: "text-red-400", surface: "bg-red-400/10 border-red-400/30" },
+  CONTESTED: { text: "text-amber-400", surface: "bg-amber-400/10 border-amber-400/30" },
+  STAGNANT: { text: "text-slate-400", surface: "bg-slate-400/10 border-slate-400/30" },
+};
+
+const AGENT_NAME_MAP: Record<string, string> = {
+  Environmental: "Environmental Agent",
+  Social: "Social Agent",
+  Risk: "Risk Agent",
+  Momentum: "Momentum Agent",
+};
+
 function geminiAgentToAgentOutput(raw: Record<string, unknown>, index: number): AgentOutput {
+  const rawName = String(raw.name ?? "").trim();
   const positives = Array.isArray(raw.positives) ? raw.positives.map(String) : [];
-  const risks = Array.isArray(raw.risks) ? raw.risks.map(String) : [];
+  const risksArr = Array.isArray(raw.risks) ? raw.risks.map(String) : [];
   const err = raw.error != null ? String(raw.error) : "";
   const keyFindings = [
     ...(err ? [`Error: ${err}`] : []),
     ...positives,
-    ...risks.map((r) => `Risk: ${r}`),
+    ...risksArr.map((r) => `Risk: ${r}`),
   ];
   const claim = String(raw.claim ?? "");
+  const gs = raw.grounding_sources ?? raw.groundingSources;
+  const groundingSources = Array.isArray(gs) ? gs.map(String) : [];
   return {
-    agentName: String(raw.name ?? `Agent ${index + 1}`),
+    agentName: AGENT_NAME_MAP[rawName] ?? (rawName || `Agent ${index + 1}`),
     score: Number(raw.score ?? 50),
     confidence: Number(raw.confidence ?? 0.5),
+    stance: String(raw.stance ?? "neutral"),
+    claim,
     keyFindings: keyFindings.length ? keyFindings : [claim || "—"],
-    dataSource: String(raw.dataSource ?? "Google Gemini"),
-    reasoning: String(raw.reasoning ?? claim),
+    risks: risksArr,
+    dataSource: String(raw.dataSource ?? "Gemini 2.5 Flash"),
+    reasoning: String(raw.reasoning ?? raw.claim ?? ""),
+    modelUsed: String(raw.model_used ?? raw.modelUsed ?? "gemini-2.5-flash"),
+    groundingSources,
   };
 }
 
@@ -131,8 +153,6 @@ function judgeToUpdates(judge: Record<string, unknown>) {
     topDissentReason: judge.top_dissent_reason ?? "",
   };
 }
-
-const EXPECTED_AGENT_STREAM_COUNT = 4;
 
 type SavePointData = {
   result?: AnalysisResult;
@@ -200,7 +220,26 @@ function normalizeAgent(o: Record<string, unknown>): AgentOutput | null {
       : [];
   const dataSource = String(o.dataSource ?? o.data_source ?? "");
   const reasoning = String(o.reasoning ?? "");
-  return { agentName, score, confidence, keyFindings, dataSource, reasoning };
+  const modelUsed =
+    o.model_used != null
+      ? String(o.model_used)
+      : o.modelUsed != null
+        ? String(o.modelUsed)
+        : undefined;
+  const groundingSourcesRaw = o.grounding_sources ?? o.groundingSources;
+  const groundingSources = Array.isArray(groundingSourcesRaw)
+    ? groundingSourcesRaw.map(String)
+    : undefined;
+  return {
+    agentName,
+    score,
+    confidence,
+    keyFindings,
+    dataSource,
+    reasoning,
+    ...(modelUsed !== undefined ? { modelUsed } : {}),
+    ...(groundingSources !== undefined ? { groundingSources } : {}),
+  };
 }
 
 function normalizeDevils(o: Record<string, unknown> | null): DevilsAdvocateChallenge | null {
@@ -376,6 +415,7 @@ export function AnalysisView() {
   const [userQuestion, setUserQuestion] = useState("");
   const [questionAnswer, setQuestionAnswer] = useState("");
   const [askingQuestion, setAskingQuestion] = useState(false);
+  const [sseStatus, setSseStatus] = useState("");
 
   const snowflakeHistoryEntityId = entityId ? SNOWFLAKE_ENTITY_ID[entityId] ?? entityId : "";
 
@@ -487,15 +527,19 @@ export function AnalysisView() {
     };
   }, [entityId]);
 
-  useEffect(() => {
-    if (!entityId || loading || !result) return;
+  /** Restore completed session from localStorage on mount / entity change (before streaming effect). */
+  useLayoutEffect(() => {
+    if (!entityId || loading) return;
+
+    const forceRerun = new URLSearchParams(window.location.search).get("rerun") === "1";
+    if (forceRerun) return;
 
     const saved = restorePoint(entityId);
     if (
       saved &&
-      Date.now() - saved.savedAt < 3600000 &&
       saved.phase === "complete" &&
-      saved.data?.result
+      saved.data?.result &&
+      Date.now() - saved.savedAt < 3600000
     ) {
       setResult(saved.data.result);
       const savedAgents = saved.data.agents;
@@ -508,8 +552,15 @@ export function AnalysisView() {
       setShowDevilsAdvocate(true);
       setUsedMockFallback(false);
       setProgress(100);
-      return;
+      setStreamingAgentIndex(-1);
+      setStreamedText({});
+      setSseStatus("");
     }
+  }, [entityId, loading]);
+
+  useEffect(() => {
+    if (!entityId || loading || !result) return;
+    if (phase === "complete") return;
 
     const initialResult = result;
 
@@ -520,6 +571,7 @@ export function AnalysisView() {
     setStreamedText({});
     setShowDevilsAdvocate(false);
     setShowVerdict(false);
+    setSseStatus("");
 
     let cancelled = false;
     let es: EventSource | null = null;
@@ -587,6 +639,7 @@ export function AnalysisView() {
         clearTimeout(fallbackTimer);
         fallbackTimer = null;
       }
+      setSseStatus("");
       setResult(initialResult);
       setUsedMockFallback(true);
       void runMockStreaming(initialResult);
@@ -606,11 +659,24 @@ export function AnalysisView() {
         if (agentCount === 0) {
           applyMockFallback();
         }
-      }, 5000);
+      }, 25000);
 
       es = new EventSource(
         `${API_BASE}/analyze/stream?target=${encodeURIComponent(streamTarget)}&mode=${encodeURIComponent(modeParam)}`
       );
+      setSseStatus("Connecting...");
+      console.log(
+        "SSE connecting to:",
+        `${API_BASE}/analyze/stream?target=${streamTarget}&mode=${modeParam}`
+      );
+      es.onopen = () => {
+        setSseStatus("Connected — waiting for agents");
+        console.log("SSE opened to:", es?.url);
+      };
+      es.onerror = (e) => {
+        setSseStatus("Connection error — using cached data");
+        console.error("SSE error", e);
+      };
 
       es.addEventListener("round_start", () => {
         if (fallbackTimer) {
@@ -628,33 +694,39 @@ export function AnalysisView() {
       });
 
       es.addEventListener("agent_result", (e) => {
-        const ev = e as MessageEvent;
-        const raw = JSON.parse(ev.data) as Record<string, unknown>;
-        const agent = geminiAgentToAgentOutput(raw, agentCount);
-        const rawName = String(raw.name ?? "");
-        agentCount++;
-        setResult((prev) => {
-          if (!prev) return null;
-          const nextAgents = [...(prev.agents ?? []), agent];
-          let nextEntity = prev.entity;
-          if (rawName === "Environmental" || rawName === "Risk") {
-            const cv = extractCvFromPacketLike(raw);
-            nextEntity = {
-              ...prev.entity,
-              greenSpaceRatio: cv.greenSpaceRatio ?? prev.entity.greenSpaceRatio,
-              heatIntensityScore: cv.heatIntensityScore ?? prev.entity.heatIntensityScore,
-              airQualityPm25: cv.airQualityPm25 ?? prev.entity.airQualityPm25,
-            };
-          }
-          const nextResult = { ...prev, agents: nextAgents, entity: nextEntity };
-          savePoint("streaming", { result: nextResult, agents: nextAgents });
-          return nextResult;
-        });
-        setAgentOutputs((prev) => [...prev, agent]);
-        setTimeout(() => {
-          document.getElementById("agent-list")?.scrollIntoView({ behavior: "smooth", block: "end" });
-        }, 100);
-        setProgress((agentCount / EXPECTED_AGENT_STREAM_COUNT) * 100);
+        try {
+          const ev = e as MessageEvent;
+          const raw = JSON.parse(ev.data as string) as Record<string, unknown>;
+          console.log("Agent received:", raw.name, raw.score);
+          agentCount++;
+          const agent = geminiAgentToAgentOutput(raw, agentCount - 1);
+          const rawName = String(raw.name ?? "");
+          setAgentOutputs((prev) => [...prev, agent]);
+          setResult((prev) => {
+            if (!prev) return null;
+            const nextAgents = [...(prev.agents ?? []), agent];
+            let nextEntity = prev.entity;
+            if (rawName === "Environmental" || rawName === "Risk") {
+              const cv = extractCvFromPacketLike(raw);
+              nextEntity = {
+                ...prev.entity,
+                greenSpaceRatio: cv.greenSpaceRatio ?? prev.entity.greenSpaceRatio,
+                heatIntensityScore: cv.heatIntensityScore ?? prev.entity.heatIntensityScore,
+                airQualityPm25: cv.airQualityPm25 ?? prev.entity.airQualityPm25,
+              };
+            }
+            const nextResult = { ...prev, agents: nextAgents, entity: nextEntity };
+            savePoint("streaming", { result: nextResult, agents: nextAgents });
+            return nextResult;
+          });
+          setProgress((agentCount / 4) * 100);
+          setTimeout(() => {
+            document.getElementById("agent-list")?.scrollIntoView({ behavior: "smooth", block: "end" });
+          }, 100);
+        } catch (err) {
+          const ev = e as MessageEvent;
+          console.error("Failed to parse agent_result:", err, ev.data);
+        }
       });
 
       es.addEventListener("verdict", (e) => {
@@ -676,6 +748,7 @@ export function AnalysisView() {
         }
         es?.close();
         es = null;
+        setSseStatus("");
         setShowVerdict(true);
         setPhase("complete");
         setHistoryKey((k) => k + 1);
@@ -701,8 +774,9 @@ export function AnalysisView() {
       clearTimeout(startTimer);
       if (fallbackTimer) clearTimeout(fallbackTimer);
       es?.close();
+      setSseStatus("");
     };
-  }, [entityId, loading, mode, snowflakeHistoryEntityId, savePoint]);
+  }, [entityId, loading, mode, phase, snowflakeHistoryEntityId, savePoint]);
 
   const handleExportVerdict = async () => {
     if (!verdictCardRef.current) return;
@@ -724,12 +798,23 @@ export function AnalysisView() {
 
   if (loading && !result) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <Card className="bg-slate-900/50 border-slate-800">
-          <CardContent className="p-8">
-            <p className="text-white">Loading analysis…</p>
-          </CardContent>
-        </Card>
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="text-center">
+          <div className="text-4xl font-bold text-emerald-400 font-mono mb-2 tracking-widest">STRATA</div>
+          <div className="text-muted-foreground text-sm mb-8">Sustainability Intelligence Platform</div>
+          <div className="flex items-center justify-center gap-1 mb-4">
+            {[0, 1, 2, 3].map((i) => (
+              <div
+                key={i}
+                className="w-1.5 h-8 bg-emerald-400/30 rounded-full animate-pulse"
+                style={{ animationDelay: `${i * 150}ms` }}
+              />
+            ))}
+          </div>
+          <div className="text-xs font-mono text-muted-foreground tracking-widest uppercase animate-pulse">
+            Convening committee...
+          </div>
+        </div>
       </div>
     );
   }
@@ -781,6 +866,11 @@ export function AnalysisView() {
                   <h1 className="text-lg font-semibold text-white">{result.entity.name}</h1>
                   <p className="text-xs text-slate-400">
                     {mode === "neighborhood" ? "Neighborhood Analysis" : "Corporate Analysis"}
+                    {showVerdict && (
+                      <span className={`ml-2 font-mono ${VERDICT_THEME[result.verdict].text}`}>
+                        · {result.verdict}
+                      </span>
+                    )}
                   </p>
                 </div>
               </div>
@@ -796,7 +886,16 @@ export function AnalysisView() {
                   type="button"
                   onClick={() => {
                     if (entityId) localStorage.removeItem(`strata:savepoint:${entityId}`);
-                    window.location.reload();
+                    setPhase("idle");
+                    setAgentOutputs([]);
+                    setShowVerdict(false);
+                    setShowDevilsAdvocate(false);
+                    setProgress(0);
+                    setStreamingAgentIndex(-1);
+                    setStreamedText({});
+                    setSseStatus("");
+                    const baseline = entityId ? MOCK_RESULTS[entityId] : undefined;
+                    setResult(baseline ?? result);
                   }}
                   className="text-xs text-slate-400 hover:text-white border border-slate-600 rounded px-3 py-1 transition-colors"
                 >
@@ -820,50 +919,35 @@ export function AnalysisView() {
       </header>
 
       <div className="container mx-auto px-4 py-8">
-        {(mode === "neighborhood" || mode === "hub") && result.entity.location && (
+        {result.entity.location && (
           <div className="mb-8">
             <MapView
               location={result.entity.location}
               name={result.entity.name}
               greenScore={result.entity.greenSpaceRatio}
+              heatScore={result.entity.heatIntensityScore}
+              mode={mode}
             />
           </div>
         )}
 
         {phase === "streaming" && (
-          <Card className="mb-8 bg-slate-900/50 border-slate-800">
-            <CardHeader>
-              <CardTitle className="text-white text-lg">Analysis in Progress</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-2">
-                <div className="flex justify-between text-sm">
-                  <span className="text-slate-400">
-                    Perspective{" "}
-                    {streamingAgentIndex >= 0
-                      ? streamingAgentIndex + 1
-                      : Math.min(result.agents.length + 1, EXPECTED_AGENT_STREAM_COUNT)}{" "}
-                    of {EXPECTED_AGENT_STREAM_COUNT}
-                  </span>
-                  <span className="text-slate-400">{Math.round(progress)}%</span>
-                </div>
-                <Progress value={progress} className="h-2" />
-              </div>
-            </CardContent>
-          </Card>
-        )}
-
-        <div className="mb-8">
-          <h2 className="text-2xl font-bold text-white mb-4">Multi-angle review</h2>
-          {phase === "streaming" && (
-            <div className="flex items-center gap-2 text-xs text-green-400 font-mono mb-3 animate-pulse">
-              <span>●</span>
-              <span>COMMITTEE IN SESSION — {agentOutputs.length} of 4 agents responded</span>
+          <div className="mb-8">
+            <div className="flex items-center gap-3 mb-6">
+              <div className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
+              <span className="text-emerald-400 font-mono text-sm font-bold tracking-widest uppercase">
+                Live Committee Session
+              </span>
+              <span className="text-muted-foreground font-mono text-xs">
+                — {agentOutputs.length} of 4 agents reporting
+              </span>
             </div>
-          )}
-          <div id="agent-list" className="grid grid-cols-1 gap-4">
-            {agentOutputs.length > 0 &&
-              agentOutputs.map((agent, index) => (
+            {sseStatus && (
+              <div className="text-xs font-mono text-muted-foreground/50 mb-2">{sseStatus}</div>
+            )}
+
+            <div className="grid grid-cols-2 gap-4" id="agent-list">
+              {agentOutputs.map((agent, index) => (
                 <AgentCard
                   key={`${agent.agentName}-${index}`}
                   agent={agent}
@@ -876,13 +960,48 @@ export function AnalysisView() {
                   }
                   className={
                     phase === "streaming" && index === agentOutputs.length - 1
-                      ? "ring-1 ring-green-400/50 animate-pulse"
+                      ? "ring-1 ring-emerald-400/50 shadow-lg shadow-emerald-400/10"
                       : ""
                   }
                 />
               ))}
+
+              {Array.from({ length: Math.max(0, 4 - agentOutputs.length) }).map((_, i) => (
+                <div
+                  key={`pending-${i}`}
+                  className="rounded-xl border border-border/30 bg-card/30 p-6 flex items-center justify-center min-h-32"
+                >
+                  <div className="flex items-center gap-2 text-muted-foreground/40">
+                    <div className="w-1.5 h-1.5 rounded-full bg-current animate-pulse" />
+                    <span className="text-xs font-mono">Awaiting agent...</span>
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
-        </div>
+        )}
+
+        {phase !== "streaming" && (
+          <div className="mb-8">
+            <h2 className="text-2xl font-bold text-white mb-4">Multi-angle review</h2>
+            <div id="agent-list" className="grid grid-cols-1 gap-4">
+              {agentOutputs.length > 0 &&
+                agentOutputs.map((agent, index) => (
+                  <AgentCard
+                    key={`${agent.agentName}-${index}`}
+                    agent={agent}
+                    isStreaming={streamingAgentIndex === index}
+                    streamedText={streamedText[index]}
+                    isComplete={
+                      phase === "complete" ||
+                      streamingAgentIndex !== index ||
+                      streamingAgentIndex < 0
+                    }
+                  />
+                ))}
+            </div>
+          </div>
+        )}
 
         {showDevilsAdvocate && (
           <div className="mb-8 grid grid-cols-1 lg:grid-cols-2 gap-8 items-start">
@@ -938,7 +1057,7 @@ export function AnalysisView() {
                 <div key={i} className="p-4 rounded-lg border border-border bg-card">
                   <div className="font-medium text-sm mb-2">{rec.action}</div>
                   <div className="flex gap-4 text-xs text-muted-foreground font-mono">
-                    <span className="text-green-400">Impact: {rec.impact}</span>
+                    <span className="text-emerald-400">Impact: {rec.impact}</span>
                     <span>{rec.timeframe}</span>
                     <span>{rec.cost}</span>
                   </div>
@@ -963,20 +1082,20 @@ export function AnalysisView() {
                   }
                 }}
                 placeholder="Ask anything about this analysis..."
-                className="flex-1 bg-card border border-border rounded-lg px-4 py-2 text-sm outline-none focus:border-green-400/50 transition-colors"
+                className="flex-1 bg-card border border-border rounded-lg px-4 py-2 text-sm outline-none focus:border-emerald-400/50 transition-colors"
               />
               <button
                 type="button"
                 onClick={() => void handleAskQuestion()}
                 disabled={!userQuestion.trim() || askingQuestion}
-                className="px-4 py-2 bg-green-400/10 border border-green-400/30 text-green-400 rounded-lg text-sm font-mono hover:bg-green-400/20 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                className="px-4 py-2 bg-emerald-400/10 border border-emerald-400/30 text-emerald-400 rounded-lg text-sm font-mono hover:bg-emerald-400/20 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 {askingQuestion ? "Thinking..." : "Ask →"}
               </button>
             </div>
 
             {questionAnswer && (
-              <div className="p-4 rounded-lg border border-green-400/20 bg-green-400/5 text-sm leading-relaxed text-slate-200">
+              <div className="p-4 rounded-lg border border-emerald-400/20 bg-emerald-400/5 text-sm leading-relaxed text-slate-200">
                 {questionAnswer}
               </div>
             )}
@@ -995,7 +1114,7 @@ export function AnalysisView() {
                     setUserQuestion(q);
                     void handleAskQuestion(q);
                   }}
-                  className="text-xs px-3 py-1 rounded-full border border-border text-muted-foreground hover:text-foreground hover:border-green-400/30 transition-colors"
+                  className="text-xs px-3 py-1 rounded-full border border-border text-muted-foreground hover:text-foreground hover:border-emerald-400/30 transition-colors"
                 >
                   {q}
                 </button>
@@ -1012,7 +1131,7 @@ export function AnalysisView() {
             <div className="grid grid-cols-3 gap-4">
               <div>
                 <div className="text-xs text-muted-foreground mb-1">Green Coverage</div>
-                <div className="text-xl font-bold text-green-400">
+                <div className="text-xl font-bold text-emerald-400">
                   {result.entity.greenSpaceRatio != null
                     ? `${(result.entity.greenSpaceRatio * 100).toFixed(0)}%`
                     : "—"}
@@ -1026,7 +1145,7 @@ export function AnalysisView() {
               </div>
               <div>
                 <div className="text-xs text-muted-foreground mb-1">Air Quality PM2.5</div>
-                <div className="text-xl font-bold text-blue-400">
+                <div className="text-xl font-bold text-emerald-400">
                   {result.entity.airQualityPm25 ?? "—"}
                 </div>
               </div>

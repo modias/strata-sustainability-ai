@@ -35,14 +35,6 @@ if not _api_key:
         _env_file,
     )
 
-# Clear cached model list if gemini_client was loaded earlier (uvicorn reload edge case)
-try:
-    import services.gemini_client as _gemini_client
-
-    _gemini_client._discovered_models_cache = None
-except Exception:
-    pass
-
 import redis as redis_lib
 
 from fastapi import FastAPI, HTTPException
@@ -56,6 +48,7 @@ from agents.momentum import run as run_momentum
 from agents.risk import run as run_risk
 from agents.social import run as run_social
 from services.evidence_builder import build_evidence_packet
+from services import cv_pipeline
 from services.snowflake_client import (
     get_latest_analysis,
     get_verdict_history,
@@ -148,6 +141,45 @@ def preload_cv_into_snowflake():
                 logger.warning("⚠ Snowflake CV storage failed for %s", entity_id)
     except Exception:
         logger.exception("CV preload startup failed")
+
+
+# Route param / UI entity id → cv_pipeline CV_PROFILES key (satellite cache)
+_OVERLAY_ENTITY_KEY: dict[str, str] = {
+    "anacostia-dc": "anacostia",
+    "phoenix-south": "phoenix_south",
+    "detroit-midtown": "detroit_midtown",
+}
+
+
+@app.get("/api/vision/overlay")
+def vision_overlay(entity_id: str):
+    """
+    GeoJSON boundary + vegetation vs infrastructure polygons for map overlay.
+    `entity_id` should match frontend route ids or CV cache keys (tesla, amazon, …).
+    """
+    raw = (entity_id or "").strip().lower()
+    if not raw:
+        raise HTTPException(400, "entity_id is required")
+    cv_key = _OVERLAY_ENTITY_KEY.get(raw, raw)
+    profile = cv_pipeline.CV_PROFILES.get(cv_key)
+    empty_fc = {"type": "FeatureCollection", "features": []}
+    if not profile:
+        return {
+            "entity_id": raw,
+            "cv_key": cv_key,
+            "boundary_geojson": None,
+            "green_overlay_geojson": empty_fc,
+            "green_coverage_pct": None,
+            "impervious_surface_pct": None,
+        }
+    return {
+        "entity_id": raw,
+        "cv_key": cv_key,
+        "boundary_geojson": profile.get("boundary_geojson"),
+        "green_overlay_geojson": profile.get("green_overlay_geojson") or empty_fc,
+        "green_coverage_pct": profile.get("green_coverage_pct"),
+        "impervious_surface_pct": profile.get("impervious_surface_pct"),
+    }
 
 
 @app.get("/health")
@@ -244,11 +276,16 @@ def ask_committee(body: AskRequest):
         "agents": body.agents,
         "context": body.context,
     }
+    # Uses run_agent → Google Search grounding on every Gemini call (see gemini_client.run_agent).
     out = run_agent(_ASK_SYSTEM, packet)
     if isinstance(out, dict):
         ans = out.get("answer")
+        grounding_sources = out.get("grounding_sources")
         if isinstance(ans, str) and ans.strip():
-            return {"answer": ans.strip()}
+            body: dict = {"answer": ans.strip()}
+            if isinstance(grounding_sources, list):
+                body["grounding_sources"] = grounding_sources
+            return body
         err = out.get("error")
         if err:
             return {"answer": f"Could not generate an answer: {err}"}

@@ -23,6 +23,11 @@ export interface AgentOutput {
   keyFindings: string[];
   dataSource: string;
   reasoning: string;
+  stance?: string;
+  claim?: string;
+  risks?: string[];
+  modelUsed?: string;
+  groundingSources?: string[];
 }
 
 export interface DevilsAdvocateChallenge {
@@ -87,8 +92,9 @@ export const ENTITIES: Entity[] = [
     id: "tesla",
     name: "Tesla Inc.",
     mode: "corporate",
+    location: { lat: 30.2272, lng: -97.798 },
     greenSpaceRatio: 0.18,
-    heatIntensityScore: 71,
+    heatIntensityScore: 65,
     airQualityPm25: 14.2,
   },
   {
@@ -105,9 +111,19 @@ export const ENTITIES: Entity[] = [
     id: "amazon",
     name: "Amazon.com Inc.",
     mode: "corporate",
+    location: { lat: 47.6062, lng: -122.3321 },
     greenSpaceRatio: 0.22,
     heatIntensityScore: 58,
     airQualityPm25: 9.8,
+  },
+  {
+    id: "microsoft",
+    name: "Microsoft Corporation",
+    mode: "corporate",
+    location: { lat: 47.6423, lng: -122.1391 },
+    greenSpaceRatio: 0.24,
+    heatIntensityScore: 45,
+    airQualityPm25: 8.1,
   },
   {
     id: "mission-district-sf",
@@ -131,6 +147,7 @@ export const ENTITIES: Entity[] = [
     id: "apple",
     name: "Apple Inc.",
     mode: "corporate",
+    location: { lat: 37.3346, lng: -122.009 },
     greenSpaceRatio: 0.31,
     heatIntensityScore: 38,
     airQualityPm25: 7.4,
@@ -139,6 +156,7 @@ export const ENTITIES: Entity[] = [
     id: "google",
     name: "Google LLC",
     mode: "corporate",
+    location: { lat: 37.422, lng: -122.0841 },
     greenSpaceRatio: 0.28,
     heatIntensityScore: 41,
     airQualityPm25: 8.8,
@@ -147,6 +165,7 @@ export const ENTITIES: Entity[] = [
     id: "nvidia",
     name: "Nvidia Corporation",
     mode: "corporate",
+    location: { lat: 37.3688, lng: -122.0363 },
     greenSpaceRatio: 0.18,
     heatIntensityScore: 62,
     airQualityPm25: 11.2,
@@ -155,6 +174,7 @@ export const ENTITIES: Entity[] = [
     id: "samsung",
     name: "Samsung Electronics Co., Ltd.",
     mode: "corporate",
+    location: { lat: 37.5665, lng: 126.978 },
     greenSpaceRatio: 0.15,
     heatIntensityScore: 71,
     airQualityPm25: 18.4,
@@ -180,7 +200,7 @@ export const ENTITIES: Entity[] = [
     airQualityPm25: 9.5,
   },
   {
-    id: "hub-nyc-ny",
+    id: "hub-new-york-ny",
     name: "New York City, NY",
     mode: "neighborhood",
     location: { lat: 40.7128, lng: -74.006 },
@@ -190,7 +210,7 @@ export const ENTITIES: Entity[] = [
     airQualityPm25: 15.0,
   },
   {
-    id: "hub-sf-bay-ca",
+    id: "hub-san-francisco-ca",
     name: "San Francisco Bay, CA",
     mode: "neighborhood",
     location: { lat: 37.7749, lng: -122.4194 },
@@ -689,7 +709,7 @@ export const MOCK_RESULTS: Record<string, AnalysisResult> = {
     ],
   },
   "apple": {
-    entity: ENTITIES[8],
+    entity: ENTITIES[9],
     verdict: "IMPROVING",
     dissentLevel: "LOW",
     dissentScore: 0.28,
@@ -783,7 +803,7 @@ export const MOCK_RESULTS: Record<string, AnalysisResult> = {
     ],
   },
   "google": {
-    entity: ENTITIES[9],
+    entity: ENTITIES[10],
     verdict: "IMPROVING",
     dissentLevel: "MODERATE",
     dissentScore: 0.41,
@@ -877,7 +897,7 @@ export const MOCK_RESULTS: Record<string, AnalysisResult> = {
     ],
   },
   "nvidia": {
-    entity: ENTITIES[10],
+    entity: ENTITIES[11],
     verdict: "CONTESTED",
     dissentLevel: "HIGH",
     dissentScore: 0.62,
@@ -971,7 +991,7 @@ export const MOCK_RESULTS: Record<string, AnalysisResult> = {
     ],
   },
   "samsung": {
-    entity: ENTITIES[11],
+    entity: ENTITIES[12],
     verdict: "CONTESTED",
     dissentLevel: "MODERATE",
     dissentScore: 0.47,
@@ -1065,7 +1085,7 @@ export const MOCK_RESULTS: Record<string, AnalysisResult> = {
     ],
   },
   "hub-austin-tx": {
-    entity: ENTITIES[12],
+    entity: ENTITIES[13],
     verdict: "DECLINING",
     dissentLevel: "MODERATE",
     dissentScore: 0.45,
@@ -1139,7 +1159,7 @@ export const MOCK_RESULTS: Record<string, AnalysisResult> = {
     ],
   },
   "hub-boston-ma": {
-    entity: ENTITIES[13],
+    entity: ENTITIES[14],
     verdict: "CONTESTED",
     dissentLevel: "MODERATE",
     dissentScore: 0.48,
@@ -1212,8 +1232,8 @@ export const MOCK_RESULTS: Record<string, AnalysisResult> = {
       "Where is tree canopy lowest relative to heat vulnerability?",
     ],
   },
-  "hub-nyc-ny": {
-    entity: ENTITIES[14],
+  "hub-new-york-ny": {
+    entity: ENTITIES[15],
     verdict: "CONTESTED",
     dissentLevel: "HIGH",
     dissentScore: 0.58,
@@ -1286,8 +1306,8 @@ export const MOCK_RESULTS: Record<string, AnalysisResult> = {
       "Where are cloudburst capital projects prioritized vs. historical flood complaints?",
     ],
   },
-  "hub-sf-bay-ca": {
-    entity: ENTITIES[15],
+  "hub-san-francisco-ca": {
+    entity: ENTITIES[16],
     verdict: "CONTESTED",
     dissentLevel: "HIGH",
     dissentScore: 0.61,
@@ -1361,7 +1381,7 @@ export const MOCK_RESULTS: Record<string, AnalysisResult> = {
     ],
   },
   "hub-seattle-wa": {
-    entity: ENTITIES[16],
+    entity: ENTITIES[17],
     verdict: "CONTESTED",
     dissentLevel: "MODERATE",
     dissentScore: 0.52,
@@ -1435,7 +1455,7 @@ export const MOCK_RESULTS: Record<string, AnalysisResult> = {
     ],
   },
   "hub-washington-dc": {
-    entity: ENTITIES[17],
+    entity: ENTITIES[18],
     verdict: "CONTESTED",
     dissentLevel: "MODERATE",
     dissentScore: 0.49,
@@ -1583,7 +1603,7 @@ export const MOCK_RESULTS: Record<string, AnalysisResult> = {
     ],
   },
   "mission-district-sf": {
-    entity: ENTITIES[6],
+    entity: ENTITIES[7],
     verdict: "CONTESTED",
     dissentLevel: "HIGH",
     dissentScore: 0.63,
@@ -1657,7 +1677,7 @@ export const MOCK_RESULTS: Record<string, AnalysisResult> = {
     ],
   },
   "unilever": {
-    entity: ENTITIES[7],
+    entity: ENTITIES[8],
     verdict: "CONTESTED",
     dissentLevel: "MODERATE",
     dissentScore: 0.44,

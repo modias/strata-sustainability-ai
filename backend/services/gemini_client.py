@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import logging
@@ -8,11 +9,20 @@ import re
 import time
 from typing import Optional
 
+import httpx
 import google.api_core.exceptions
 import google.generativeai as genai
+from google.generativeai import protos
+from google.generativeai.types import Tool
 import redis
 
 logger = logging.getLogger(__name__)
+
+BACKBOARD_API_URL = os.environ.get(
+    "BACKBOARD_API_URL",
+    "https://api.backboard.dev/v1/chat/completions",
+)
+BACKBOARD_API_KEY = os.environ.get("BACKBOARD_API_KEY", "")
 
 try:
     _redis = redis.Redis(
@@ -70,19 +80,16 @@ def _cache_key(system_prompt: str, evidence: dict) -> str:
     return "strata:gemini:" + hashlib.sha256(raw.encode()).hexdigest()
 
 
-# Primary model for GenerativeModel(model_name=...). Override with GEMINI_MODEL env (comma-separated).
+# Primary default when GEMINI_MODEL is unset; also the first entry in MODELS_TO_TRY.
 DEFAULT_GEMINI_MODEL = "gemini-2.5-flash"
 
-_STATIC_FALLBACK_MODELS = [
-    DEFAULT_GEMINI_MODEL,
+# Fixed fallback chain (avoid deprecated / unavailable ids like gemini-1.5-flash-8b on some APIs).
+MODELS_TO_TRY = [
+    "gemini-2.5-flash",
     "gemini-2.0-flash",
-    "gemini-2.0-flash-001",
-    "gemini-flash-latest",
-    "gemini-1.5-flash-002",
-    "gemini-1.5-flash-8b",
+    "gemini-1.5-flash",
+    "gemini-1.5-flash-latest",
 ]
-
-_discovered_models_cache: Optional[list[str]] = None
 
 # Short model ids from AI Studio, e.g. gemini-2.5-flash (SDK prepends models/)
 _MODEL_SHORT_ID_RE = re.compile(r"^[a-zA-Z][a-zA-Z0-9._-]{1,120}$")
@@ -133,60 +140,41 @@ def _finalize_model_list(ids: list[str]) -> list[str]:
     return out
 
 
-def _default_static_candidates() -> list[str]:
-    """DEFAULT_GEMINI_MODEL first, then other fallbacks for quota/404 rotation (no list_models)."""
-    return _finalize_model_list(list(_STATIC_FALLBACK_MODELS))
-
-
-def _model_candidates() -> list[str]:
-    """Env override, else DEFAULT_GEMINI_MODEL + static fallbacks (cached)."""
-    global _discovered_models_cache
+def _models_for_run() -> list[str]:
+    """
+    Ordered list: GEMINI_MODEL (comma-separated) first if set, then MODELS_TO_TRY without duplicates.
+    """
     raw = os.environ.get("GEMINI_MODEL", "").strip()
     if raw:
         parsed = _finalize_model_list([p.strip() for p in raw.split(",") if p.strip()])
         if parsed:
-            logger.info("GEMINI_MODEL override (%s ids): %s", len(parsed), parsed[:6])
-            return parsed
-        logger.warning("GEMINI_MODEL is set but no valid model ids; using default static fallback")
-        _discovered_models_cache = None  # force fresh list; env may have had API key pasted here
-    if _discovered_models_cache is None:
-        _discovered_models_cache = _default_static_candidates()
-        if not _discovered_models_cache:
-            _discovered_models_cache = _finalize_model_list([DEFAULT_GEMINI_MODEL])
-        logger.info(
-            "Gemini model order (%s candidates): %s",
-            len(_discovered_models_cache),
-            _discovered_models_cache[:8],
-        )
-    return _discovered_models_cache
+            logger.info("GEMINI_MODEL prepend (%s ids): %s", len(parsed), parsed[:6])
+            seen = set(parsed)
+            out = list(parsed)
+            for m in MODELS_TO_TRY:
+                if m not in seen:
+                    seen.add(m)
+                    out.append(m)
+            return out
+    return list(MODELS_TO_TRY)
 
 
-def _should_try_next_model(exc: Exception) -> bool:
-    """Try next model on 404 OR 429 — quotas are often per-model; a different model may work."""
-    if isinstance(exc, google.api_core.exceptions.NotFound):
-        return True
-    if isinstance(exc, google.api_core.exceptions.ResourceExhausted):
-        return True
-    if isinstance(exc, google.api_core.exceptions.BadRequest):
-        s = str(exc).lower()
-        if "model" in s and ("format" in s or "unexpected" in s or "invalid" in s or "name" in s):
-            return True
-    s = str(exc).lower()
-    if "unexpected model name format" in s:
-        return True
-    if "429" in s or "resource exhausted" in s:
-        return True
-    if "quota" in s and ("exceeded" in s or "limit" in s):
-        return True
-    if "404" in s:
-        return True
-    if "not found" in s and "model" in s:
-        return True
-    if "invalid" in s and "model" in s:
-        return True
-    if "not supported" in s and "generate" in s:
-        return True
-    return False
+def _extract_grounding_sources(response) -> list[str]:
+    """URIs from Google Search grounding metadata, if present."""
+    grounding_sources: list[str] = []
+    try:
+        if hasattr(response, "candidates") and response.candidates:
+            candidate = response.candidates[0]
+            if hasattr(candidate, "grounding_metadata") and candidate.grounding_metadata:
+                meta = candidate.grounding_metadata
+                for chunk in meta.grounding_chunks or []:
+                    if hasattr(chunk, "web") and chunk.web is not None:
+                        uri = getattr(chunk.web, "uri", None)
+                        if uri:
+                            grounding_sources.append(str(uri))
+    except Exception:
+        logger.debug("grounding metadata extraction failed", exc_info=True)
+    return grounding_sources
 
 
 def _response_text(response) -> str:
@@ -210,11 +198,46 @@ def _response_text(response) -> str:
     raise ValueError("Empty or blocked Gemini response")
 
 
+async def run_agent_backboard(system_prompt: str, evidence_packet: dict) -> dict:
+    if not (BACKBOARD_API_KEY or "").strip():
+        raise ValueError("No BACKBOARD_API_KEY set")
+
+    async with httpx.AsyncClient(timeout=30) as client:
+        response = await client.post(
+            BACKBOARD_API_URL,
+            headers={
+                "Authorization": f"Bearer {BACKBOARD_API_KEY}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "model": "gpt-4o-mini",
+                "messages": [
+                    {"role": "system", "content": system_prompt},
+                    {
+                        "role": "user",
+                        "content": f"Evidence data:\n{json.dumps(evidence_packet, indent=2)}",
+                    },
+                ],
+                "temperature": 0.3,
+                "max_tokens": 1000,
+                "response_format": {"type": "json_object"},
+            },
+        )
+        response.raise_for_status()
+        content = response.json()["choices"][0]["message"]["content"]
+        result = extract_json(content)
+        if not isinstance(result, dict):
+            result = {}
+        result["model_used"] = "backboard-gpt4o-mini"
+        result.setdefault("grounding_sources", [])
+        return result
+
+
 def run_agent(system_prompt: str, evidence_packet: dict) -> dict:
     try:
         gemini_key = os.environ.get("GEMINI_API_KEY")
         if not gemini_key:
-            return {"error": "no api key", "score": 0, "confidence": 0}
+            return {"error": "no api key", "score": 0, "confidence": 0, "grounding_sources": []}
 
         cache_key = _cache_key(system_prompt, evidence_packet)
         if _redis is not None:
@@ -222,13 +245,17 @@ def run_agent(system_prompt: str, evidence_packet: dict) -> dict:
                 cached = _redis.get(cache_key)
                 if cached:
                     logger.info("Cache hit for %s", cache_key[:16])
-                    return json.loads(cached)
+                    data = json.loads(cached)
+                    if isinstance(data, dict) and "grounding_sources" not in data:
+                        data["grounding_sources"] = []
+                    return data
             except Exception:
                 pass
 
         genai.configure(api_key=gemini_key)
 
-        if not _model_candidates():
+        models = _models_for_run()
+        if not models:
             return {
                 "error": "No valid Gemini model ids (check GEMINI_MODEL uses names like gemini-2.5-flash, not your API key)",
                 "score": 50,
@@ -237,6 +264,7 @@ def run_agent(system_prompt: str, evidence_packet: dict) -> dict:
                 "claim": "Analysis unavailable",
                 "positives": [],
                 "risks": [],
+                "grounding_sources": [],
             }
 
         schema_reminder = """
@@ -250,73 +278,81 @@ CRITICAL: Your response must be a single raw JSON object.
 """
         prompt = f"{system_prompt}\n{schema_reminder}\n\nEvidence data:\n{json.dumps(evidence_packet, indent=2)}"
 
-        gen_cfg_json = genai.GenerationConfig(
-            response_mime_type="application/json",
+        gen_cfg = genai.GenerationConfig(
             max_output_tokens=2048,
             temperature=0.3,
         )
-        gen_cfg_plain = genai.GenerationConfig(
-            max_output_tokens=2048,
-            temperature=0.3,
-        )
+        search_tools = [Tool(google_search_retrieval=protos.GoogleSearchRetrieval())]
 
-        def _json_mode_retryable(exc: Exception) -> bool:
-            s = str(exc).lower()
-            return (
-                "mime" in s
-                or "response_mime" in s
-                or "application/json" in s
-                or ("json" in s and "unsupported" in s)
-            )
-
-        last_model_error: Optional[Exception] = None
-        max_models = int(os.environ.get("GEMINI_MAX_MODEL_TRIES", "18"))
-        for attempt_idx, model_name in enumerate(_model_candidates()):
-            if attempt_idx >= max_models:
-                logger.warning("Gemini: stopping after %s models", max_models)
+        last_error: Optional[Exception] = None
+        for model_name in models:
+            try:
+                model = genai.GenerativeModel(model_name=model_name)
+                response = model.generate_content(
+                    prompt,
+                    tools=search_tools,
+                    generation_config=gen_cfg,
+                )
+                grounding_sources = _extract_grounding_sources(response)
+                result = extract_json(_response_text(response))
+                if not isinstance(result, dict):
+                    result = {}
+                result["grounding_sources"] = grounding_sources
+                result["model_used"] = model_name
+                if _redis is not None:
+                    try:
+                        _redis.setex(cache_key, 3600, json.dumps(result))
+                    except Exception:
+                        pass
+                return result
+            except ValueError as e:
+                last_error = e
+                logger.warning("Model %s: unparseable JSON, trying next: %s", model_name, e)
+                continue
+            except Exception as e:
+                last_error = e
+                error_str = str(e)
+                if isinstance(e, google.api_core.exceptions.NotFound):
+                    logger.warning("Model %s not available (404), trying next", model_name)
+                    continue
+                if "404" in error_str or "not found" in error_str.lower():
+                    logger.warning("Model %s not available, trying next", model_name)
+                    continue
+                if (
+                    "429" in error_str
+                    or "quota" in error_str.lower()
+                    or isinstance(e, google.api_core.exceptions.ResourceExhausted)
+                ):
+                    logger.warning("Quota hit on %s, trying next model", model_name)
+                    if isinstance(e, google.api_core.exceptions.ResourceExhausted):
+                        time.sleep(0.75)
+                    continue
+                logger.warning("Model %s failed (non-retryable): %s", model_name, e)
                 break
-            # Primary: DEFAULT_GEMINI_MODEL ("gemini-2.5-flash"); then fallbacks on quota/404.
-            model = genai.GenerativeModel(model_name=model_name)
-            for cfg, label in ((gen_cfg_json, "json"), (gen_cfg_plain, "plain")):
-                try:
-                    response = model.generate_content(prompt, generation_config=cfg)
-                    result = extract_json(_response_text(response))
-                    if _redis is not None:
-                        try:
-                            _redis.setex(cache_key, 3600, json.dumps(result))
-                        except Exception:
-                            pass
-                    return result
-                except ValueError as e:
-                    last_model_error = e
-                    if cfg is gen_cfg_json:
-                        logger.warning(
-                            "Gemini model %s: could not parse JSON-mode output, retrying plain: %s",
-                            model_name,
-                            e,
-                        )
-                        continue
-                    logger.warning("Gemini model %s: unparseable output, trying next model: %s", model_name, e)
-                    break
-                except Exception as e:
-                    last_model_error = e
-                    if cfg is gen_cfg_json and _json_mode_retryable(e):
-                        logger.warning(
-                            "Gemini model %s: JSON mode failed (%s), retrying plain text",
-                            model_name,
-                            e,
-                        )
-                        continue
-                    if _should_try_next_model(e):
-                        logger.warning("Gemini model %s (%s) failed: %s", model_name, label, e)
-                        if isinstance(e, google.api_core.exceptions.ResourceExhausted):
-                            time.sleep(0.75)
-                        break
-                    raise
 
-        if last_model_error:
-            raise last_model_error
-        raise RuntimeError("No Gemini models available for generateContent")
+        logger.error("All models failed: %s", last_error)
+        try:
+            logger.info("Trying Backboard fallback...")
+            result = asyncio.run(run_agent_backboard(system_prompt, evidence_packet))
+            if _redis is not None:
+                try:
+                    _redis.setex(cache_key, 3600, json.dumps(result))
+                except Exception:
+                    pass
+            return result
+        except Exception as be:
+            logger.error("Backboard fallback failed: %s", be)
+
+        return {
+            "error": str(last_error) if last_error else "All Gemini models failed",
+            "score": 50,
+            "confidence": 0.5,
+            "stance": "neutral",
+            "claim": "Analysis unavailable",
+            "positives": [],
+            "risks": [],
+            "grounding_sources": [],
+        }
 
     except Exception as e:
         logger.error("run_agent failed: %s", e, exc_info=True)
@@ -328,4 +364,5 @@ CRITICAL: Your response must be a single raw JSON object.
             "claim": "Analysis unavailable",
             "positives": [],
             "risks": [],
+            "grounding_sources": [],
         }

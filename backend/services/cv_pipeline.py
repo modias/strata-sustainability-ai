@@ -1,10 +1,12 @@
 import base64
 import logging
 from pathlib import Path
+from typing import Any, Optional
 
 import cv2
 import numpy
 import rasterio
+from rasterio.warp import transform_bounds
 
 logger = logging.getLogger(__name__)
 
@@ -103,6 +105,27 @@ def generate_heatmap_image(thermal_array):
     return base64.b64encode(buf).decode("utf-8")
 
 
+def bounds_polygon_wgs84(geotiff_path: str) -> Optional[dict[str, Any]]:
+    """Rectangle footprint of the raster in WGS84 lon/lat for map boundary outline."""
+    try:
+        with rasterio.open(geotiff_path) as src:
+            left, bottom, right, top = src.bounds
+            crs = src.crs
+            if crs is not None:
+                left, bottom, right, top = transform_bounds(crs, "EPSG:4326", left, bottom, right, top)
+            ring = [
+                [left, bottom],
+                [right, bottom],
+                [right, top],
+                [left, top],
+                [left, bottom],
+            ]
+            return {"type": "Polygon", "coordinates": [ring]}
+    except Exception as e:
+        logger.error("bounds_polygon_wgs84 failed for %s: %s", geotiff_path, e, exc_info=True)
+        return None
+
+
 def generate_green_overlay(ndvi_array, transform):
     empty = {"type": "FeatureCollection", "features": []}
     try:
@@ -144,6 +167,7 @@ def _default_cv_profile(entity_id: str) -> dict:
         "fragmentation_score": 0,
         "heat_intensity_score": 0,
         "heatmap_image_b64": None,
+        "boundary_geojson": None,
         "green_overlay_geojson": {"type": "FeatureCollection", "features": []},
     }
 
@@ -160,6 +184,7 @@ def build_cv_profile(entity_id: str, file_path: str) -> dict:
     heat_dict = calculate_heat_intensity(file_path)
     heatmap_b64 = generate_heatmap_image(heat_dict["thermal_array"])
     geojson = generate_green_overlay(ndvi_array, transform)
+    boundary_geojson = bounds_polygon_wgs84(file_path)
 
     return {
         "entity_id": entity_id,
@@ -169,6 +194,7 @@ def build_cv_profile(entity_id: str, file_path: str) -> dict:
         "fragmentation_score": fragmentation_score,
         "heat_intensity_score": heat_dict["heat_intensity_score"],
         "heatmap_image_b64": heatmap_b64,
+        "boundary_geojson": boundary_geojson,
         "green_overlay_geojson": geojson,
     }
 
