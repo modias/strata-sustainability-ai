@@ -101,6 +101,15 @@ export const ENTITIES: Entity[] = [
   },
 ];
 
+/** Route `entityId` → Snowflake `entity_id` for `/history` and CV rows */
+export const SNOWFLAKE_ENTITY_ID: Partial<Record<string, string>> = {
+  "anacostia-dc": "anacostia",
+  "east-austin": "phoenix_south",
+  "mission-district-sf": "detroit_midtown",
+  patagonia: "target",
+  amazon: "chipotle",
+};
+
 // Mock analysis results
 export const MOCK_RESULTS: Record<string, AnalysisResult> = {
   "anacostia-dc": {

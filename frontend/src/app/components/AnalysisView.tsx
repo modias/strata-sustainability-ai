@@ -12,7 +12,8 @@ import { DissentMap } from "./DissentMap";
 import { SuggestedQuestions } from "./SuggestedQuestions";
 import { NoExpansionActions } from "./NoExpansionActions";
 import { MapView } from "./MapView";
-import { MOCK_RESULTS, AgentOutput, generateAgentStream } from "../data/mockData";
+import { MOCK_RESULTS, AgentOutput, generateAgentStream, SNOWFLAKE_ENTITY_ID } from "../data/mockData";
+import { VerdictHistory } from "./VerdictHistory";
 import html2canvas from "html2canvas";
 
 type AnalysisPhase = "idle" | "streaming" | "complete";
@@ -201,10 +202,13 @@ export function AnalysisView() {
           </div>
         </div>
 
-        {/* Devil's Advocate */}
+        {/* Devil's Advocate + past verdicts (Snowflake) */}
         {showDevilsAdvocate && (
-          <div className="mb-8">
+          <div className="mb-8 grid grid-cols-1 lg:grid-cols-2 gap-8 items-start">
             <DissentMap devilsAdvocate={result.devilsAdvocate} />
+            <VerdictHistory
+              entityId={entityId ? SNOWFLAKE_ENTITY_ID[entityId] ?? entityId : ""}
+            />
           </div>
         )}
 
