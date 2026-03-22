@@ -4,6 +4,7 @@ import { Home } from "./components/Home";
 import { FeaturedCompanies } from "./components/FeaturedCompanies";
 import { CorporateHubs } from "./components/CorporateHubs";
 import { AnalysisView } from "./components/AnalysisView";
+import { About } from "./pages/About";
 
 export const router = createBrowserRouter([
   {
@@ -11,6 +12,7 @@ export const router = createBrowserRouter([
     Component: Root,
     children: [
       { index: true, Component: Home },
+      { path: "about", Component: About },
       { path: "companies", Component: FeaturedCompanies },
       { path: "corporate-hubs", Component: CorporateHubs },
       { path: "analysis/:mode/:entityId", Component: AnalysisView },

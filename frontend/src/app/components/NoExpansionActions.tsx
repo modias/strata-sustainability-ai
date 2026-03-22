@@ -86,7 +86,7 @@ export function NoExpansionActions({ actions }: NoExpansionActionsProps) {
 
           {/* Value Proposition */}
           <div className="mt-6 p-4 bg-slate-900/50 rounded-lg border border-emerald-500/20">
-            <h4 className="text-sm font-semibold text-emerald-300 mb-2">Why This Matters</h4>
+            <h4 className="text-sm font-semibold text-emerald-300 mb-2">Why these actions</h4>
             <p className="text-sm text-slate-400 leading-relaxed">
               Most sustainability consultants recommend investment. STRATA tells you what to do{" "}
               <strong className="text-slate-300">without spending anything</strong>. Each action is filtered by a

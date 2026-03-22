@@ -8,4 +8,5 @@ python-dotenv
 httpx
 opencv-python-headless
 numpy
+rasterio
 Pillow

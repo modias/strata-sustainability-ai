@@ -28,9 +28,10 @@ function verdictColorClass(verdict: string): string {
 
 interface VerdictHistoryProps {
   entityId: string;
+  refreshKey?: number;
 }
 
-export function VerdictHistory({ entityId }: VerdictHistoryProps) {
+export function VerdictHistory({ entityId, refreshKey }: VerdictHistoryProps) {
   const [rows, setRows] = useState<VerdictHistoryRow[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -66,7 +67,7 @@ export function VerdictHistory({ entityId }: VerdictHistoryProps) {
     return () => {
       cancelled = true;
     };
-  }, [entityId]);
+  }, [entityId, refreshKey]);
 
   return (
     <Card className="bg-slate-900/50 border-slate-800 h-full">

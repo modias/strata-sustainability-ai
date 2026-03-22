@@ -4,15 +4,17 @@ import { Badge } from "./ui/badge";
 import { Progress } from "./ui/progress";
 import { AgentOutput } from "../data/mockData";
 import { Brain, Loader2 } from "lucide-react";
+import { cn } from "./ui/utils";
 
 interface AgentCardProps {
   agent: AgentOutput;
   isStreaming: boolean;
   streamedText?: string;
   isComplete: boolean;
+  className?: string;
 }
 
-export function AgentCard({ agent, isStreaming, streamedText, isComplete }: AgentCardProps) {
+export function AgentCard({ agent, isStreaming, streamedText, isComplete, className }: AgentCardProps) {
   const getScoreColor = (score: number) => {
     if (score >= 75) return "text-emerald-400";
     if (score >= 50) return "text-amber-400";
@@ -28,6 +30,7 @@ export function AgentCard({ agent, isStreaming, streamedText, isComplete }: Agen
   if (isStreaming && streamedText) {
     return (
       <motion.div
+        className={cn("rounded-lg", className)}
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.3 }}
@@ -36,7 +39,7 @@ export function AgentCard({ agent, isStreaming, streamedText, isComplete }: Agen
           <CardHeader>
             <div className="flex items-center gap-2">
               <Loader2 className="h-5 w-5 text-emerald-400 animate-spin" />
-              <CardTitle className="text-white text-lg">Analyzing...</CardTitle>
+              <CardTitle className="text-white text-xl font-bold tracking-tight">Analyzing…</CardTitle>
             </div>
           </CardHeader>
           <CardContent>
@@ -55,25 +58,35 @@ export function AgentCard({ agent, isStreaming, streamedText, isComplete }: Agen
 
   return (
     <motion.div
+      className={cn("rounded-lg", className)}
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.3 }}
     >
       <Card className="bg-slate-900/50 border-slate-800 hover:border-slate-700 transition-colors">
-        <CardHeader>
-          <div className="flex items-start justify-between">
-            <div className="flex items-center gap-3">
-              <div className="h-10 w-10 rounded-lg bg-gradient-to-br from-emerald-500/20 to-teal-600/20 flex items-center justify-center border border-emerald-500/30">
+        <CardHeader className="space-y-4">
+          <div className="flex items-start justify-between gap-3">
+            <h3 className="text-2xl font-bold text-white tracking-tight leading-snug flex-1 min-w-0">
+              {agent.agentName}
+            </h3>
+            {agent.modelUsed ? (
+              <span className="text-xs font-mono text-muted-foreground/40 ml-auto shrink-0 max-w-[50%] truncate text-right">
+                {agent.modelUsed}
+              </span>
+            ) : null}
+          </div>
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="h-10 w-10 shrink-0 rounded-lg bg-gradient-to-br from-emerald-500/20 to-teal-600/20 flex items-center justify-center border border-emerald-500/30">
                 <Brain className="h-5 w-5 text-emerald-400" />
               </div>
               <div>
-                <CardTitle className="text-white text-lg">{agent.agentName}</CardTitle>
-                <p className="text-sm text-slate-400 mt-1">
+                <p className="text-sm text-slate-400">
                   How sure: {(agent.confidence * 100).toFixed(0)}%
                 </p>
               </div>
             </div>
-            <div className={`px-4 py-2 rounded-lg border ${getScoreBgColor(agent.score)}`}>
+            <div className={`shrink-0 px-4 py-2 rounded-lg border ${getScoreBgColor(agent.score)}`}>
               <div className={`text-2xl font-bold ${getScoreColor(agent.score)}`}>{agent.score}</div>
               <div className="text-xs text-slate-400">/ 100</div>
             </div>

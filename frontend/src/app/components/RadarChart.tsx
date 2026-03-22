@@ -41,8 +41,11 @@ export function RadarChart({ data }: RadarChartProps) {
 
           {/* Score Legend */}
           <div className="mt-4 grid grid-cols-2 gap-3">
-            {data.map((item) => (
-              <div key={item.dimension} className="flex items-center justify-between p-2 rounded bg-slate-800/50">
+            {data.map((item, index) => (
+              <div
+                key={`radar-legend-${index}-${item.dimension}`}
+                className="flex items-center justify-between p-2 rounded bg-slate-800/50"
+              >
                 <span className="text-sm text-slate-300">{item.dimension}</span>
                 <span className="text-sm font-semibold text-emerald-400">{item.score}</span>
               </div>

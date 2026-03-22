@@ -17,28 +17,28 @@ export function VerdictCard({ verdict, dissentLevel, dissentScore, entityName }:
       case "IMPROVING":
         return {
           color: "text-emerald-400",
-          bgColor: "bg-emerald-500/10 border-emerald-500/30",
+          bgColor: "bg-emerald-400/10 border-emerald-400/30",
           icon: TrendingUp,
           description: "Positive trajectory across multiple sustainability dimensions",
         };
       case "DECLINING":
         return {
           color: "text-red-400",
-          bgColor: "bg-red-500/10 border-red-500/30",
+          bgColor: "bg-red-400/10 border-red-400/30",
           icon: TrendingDown,
           description: "Negative trajectory indicating worsening sustainability conditions",
         };
       case "CONTESTED":
         return {
           color: "text-amber-400",
-          bgColor: "bg-amber-500/10 border-amber-500/30",
+          bgColor: "bg-amber-400/10 border-amber-400/30",
           icon: AlertTriangle,
           description: "Agents disagree sharply on direction - both improvement and decline are defensible",
         };
       case "STAGNANT":
         return {
           color: "text-slate-400",
-          bgColor: "bg-slate-500/10 border-slate-500/30",
+          bgColor: "bg-slate-400/10 border-slate-400/30",
           icon: Minus,
           description: "Minimal change across sustainability metrics",
         };

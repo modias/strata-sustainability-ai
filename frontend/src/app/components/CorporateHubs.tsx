@@ -3,8 +3,8 @@ import { StrataEntityListPage } from "./StrataEntityListPage";
 const HUB_IDS = [
   "hub-austin-tx",
   "hub-boston-ma",
-  "hub-nyc-ny",
-  "hub-sf-bay-ca",
+  "hub-new-york-ny",
+  "hub-san-francisco-ca",
   "hub-seattle-wa",
   "hub-washington-dc",
 ] as const;
