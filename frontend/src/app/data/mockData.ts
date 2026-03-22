@@ -163,13 +163,13 @@ export const ENTITIES: Entity[] = [
   },
 ];
 
-/** Route `entityId` → Snowflake `entity_id` for `/history` and CV rows */
+/**
+ * Route `entityId` → Snowflake `entity_id` for `/analyze` and `/history`.
+ * Only include entries where the value exists in `verdicts` (distinct check in Snowflake).
+ * Currently `verdicts` has: `anacostia_test` — other routes use their route id as `entity_id`.
+ */
 export const SNOWFLAKE_ENTITY_ID: Partial<Record<string, string>> = {
-  "anacostia-dc": "anacostia",
-  "east-austin": "phoenix_south",
-  "mission-district-sf": "detroit_midtown",
-  patagonia: "target",
-  amazon: "chipotle",
+  "anacostia-dc": "anacostia_test",
 };
 
 // Mock analysis results

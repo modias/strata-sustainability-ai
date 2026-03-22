@@ -6,8 +6,9 @@ load_dotenv()
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
 
-from services.snowflake_client import get_verdict_history, save_cv_results
+from services.snowflake_client import get_latest_analysis, get_verdict_history, save_cv_results
 
 logger = logging.getLogger(__name__)
 
@@ -18,10 +19,14 @@ app.add_middleware(
     allow_origins=[
         "http://127.0.0.1:5173",
         "http://localhost:5173",
+        "http://127.0.0.1:5178",
+        "http://localhost:5178",
+        "http://127.0.0.1:3000",
+        "http://localhost:3000",
     ],
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["Content-Type", "Authorization"],
 )
 
 ENTITY_CV_PROFILES = {
@@ -85,3 +90,19 @@ def health():
 def history(entity_id: str):
     """Returns longitudinal verdict history for an entity from Snowflake"""
     return get_verdict_history(entity_id)
+
+
+class AnalyzeRequest(BaseModel):
+    entity_id: str
+
+
+@app.post("/analyze")
+def analyze(req: AnalyzeRequest):
+    """Latest full analysis row for an entity from Snowflake (verdict, scores, agent JSON, judge JSON)."""
+    entity_id = (req.entity_id or "").strip()
+    if not entity_id:
+        return {"found": False, "entity_id": "", "data": None}
+    data = get_latest_analysis(entity_id)
+    if data is None:
+        return {"found": False, "entity_id": entity_id, "data": None}
+    return {"found": True, "entity_id": entity_id, "data": data}
