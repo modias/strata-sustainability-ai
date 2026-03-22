@@ -57,9 +57,9 @@ export function DissentMap({ devilsAdvocate }: DissentMapProps) {
           {/* Explanation */}
           <div className="border-t border-purple-500/20 pt-4">
             <p className="text-xs text-slate-400 italic">
-              The Devil's Advocate runs after all primary agents complete, targeting the highest-confidence claim with a
-              specific, sourced counter-argument. This adversarial layer surfaces hidden assumptions and contested data
-              points that would otherwise remain invisible.
+              The Devil's Advocate runs after all primary reviews finish, targeting the strongest claim with a specific,
+              sourced counter-argument. This step surfaces hidden assumptions and contested data points that
+              would otherwise stay invisible.
             </p>
           </div>
         </CardContent>

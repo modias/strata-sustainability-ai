@@ -175,7 +175,7 @@ export function AnalysisView() {
               <div className="space-y-2">
                 <div className="flex justify-between text-sm">
                   <span className="text-slate-400">
-                    Agent {streamingAgentIndex + 1} of {result.agents.length}
+                    Perspective {streamingAgentIndex + 1} of {result.agents.length}
                   </span>
                   <span className="text-slate-400">{Math.round(progress)}%</span>
                 </div>
@@ -185,9 +185,9 @@ export function AnalysisView() {
           </Card>
         )}
 
-        {/* Agent Committee */}
+        {/* Specialist reviews */}
         <div className="mb-8">
-          <h2 className="text-2xl font-bold text-white mb-4">AI Committee Analysis</h2>
+          <h2 className="text-2xl font-bold text-white mb-4">Multi-angle review</h2>
           <div className="grid grid-cols-1 gap-4">
             {result.agents.map((agent, index) => (
               <AgentCard

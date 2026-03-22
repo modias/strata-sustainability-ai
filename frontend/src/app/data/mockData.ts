@@ -99,6 +99,68 @@ export const ENTITIES: Entity[] = [
     name: "Unilever PLC",
     mode: "corporate",
   },
+  {
+    id: "apple",
+    name: "Apple Inc.",
+    mode: "corporate",
+  },
+  {
+    id: "google",
+    name: "Google LLC",
+    mode: "corporate",
+  },
+  {
+    id: "nvidia",
+    name: "Nvidia Corporation",
+    mode: "corporate",
+  },
+  {
+    id: "samsung",
+    name: "Samsung Electronics Co., Ltd.",
+    mode: "corporate",
+  },
+  {
+    id: "hub-austin-tx",
+    name: "Austin, TX",
+    mode: "neighborhood",
+    location: { lat: 30.2672, lng: -97.7431 },
+    address: "Austin, TX metro area",
+  },
+  {
+    id: "hub-boston-ma",
+    name: "Boston, MA",
+    mode: "neighborhood",
+    location: { lat: 42.3601, lng: -71.0589 },
+    address: "Boston, MA metro area",
+  },
+  {
+    id: "hub-nyc-ny",
+    name: "New York City, NY",
+    mode: "neighborhood",
+    location: { lat: 40.7128, lng: -74.006 },
+    address: "New York City, NY metro area",
+  },
+  {
+    id: "hub-sf-bay-ca",
+    name: "San Francisco Bay, CA",
+    mode: "neighborhood",
+    location: { lat: 37.7749, lng: -122.4194 },
+    address: "San Francisco Bay Area, CA",
+  },
+  {
+    id: "hub-seattle-wa",
+    name: "Seattle, WA",
+    mode: "neighborhood",
+    location: { lat: 47.6062, lng: -122.3321 },
+    address: "Seattle, WA metro area",
+  },
+  {
+    id: "hub-washington-dc",
+    name: "Washington, DC",
+    mode: "neighborhood",
+    location: { lat: 38.9072, lng: -77.0369 },
+    address: "Washington, DC metro area",
+  },
 ];
 
 // Mock analysis results
@@ -110,31 +172,31 @@ export const MOCK_RESULTS: Record<string, AnalysisResult> = {
     dissentScore: 0.73,
     agents: [
       {
-        agentName: "Climate Resilience Agent",
+        agentName: "Climate resilience",
         score: 72,
         confidence: 0.84,
         keyFindings: [
-          "Green coverage increased 18% since 2021 (Sentinel-2 NDVI analysis)",
+          "Green coverage increased 18% since 2021 (satellite vegetation analysis)",
           "Urban heat island intensity decreased by 2.3°C in summer months",
           "Tree canopy maturity index improving: 34% of new plantings 3+ years old",
         ],
-        dataSource: "Sentinel-2, NOAA CDO, OpenCV analysis",
-        reasoning: "The $47M green infrastructure investment is producing measurable environmental results. NDVI composite shows sustained vegetation growth, thermal band analysis confirms localized cooling, and temporal satellite comparison reveals reduced impervious surface percentage. The trajectory is environmentally positive.",
+        dataSource: "Satellite imagery, national weather records, and image analysis",
+        reasoning: "The $47M green infrastructure investment is producing measurable environmental results. Vegetation trends show sustained green cover growth, thermal analysis confirms localized cooling, and satellite comparison over time reveals reduced paved surface share. The trajectory is environmentally positive.",
       },
       {
-        agentName: "Public Health Agent",
+        agentName: "Public health",
         score: 68,
         confidence: 0.76,
         keyFindings: [
-          "PM2.5 air quality improved 12% year-over-year (OpenAQ)",
+          "PM2.5 air quality improved 12% year-over-year (regional monitors)",
           "Walkability index increased to 67/100 (EPA EnviroAtlas)",
-          "Street-level shade coverage: 42% (Gemini Vision + Mapillary)",
+          "Street-level shade coverage: 42% (street photos and automated review)",
         ],
-        dataSource: "OpenAQ, EPA EnviroAtlas, Mapillary",
-        reasoning: "Street-level livability metrics show genuine improvement. Air quality stations show consistent PM2.5 decline, Overpass transit data indicates three new Capital Bikeshare stations within 0.5mi, and Mapillary street imagery analysis confirms pedestrian-level shade canopy deployment. Public health trajectory is improving.",
+        dataSource: "Air-quality sensors, EPA community data, street-level imagery",
+        reasoning: "Street-level livability metrics show genuine improvement. Air quality stations show consistent PM2.5 decline, transit data indicates three new bike-share stations within 0.5mi, and street imagery review confirms pedestrian-level shade canopy deployment. Public health trajectory is improving.",
       },
       {
-        agentName: "Urban Development Agent",
+        agentName: "Urban development",
         score: 58,
         confidence: 0.71,
         keyFindings: [
@@ -142,11 +204,11 @@ export const MOCK_RESULTS: Record<string, AnalysisResult> = {
           "New construction: 87% residential, 13% mixed-use retail",
           "Infrastructure investment concentrated along commercial corridors",
         ],
-        dataSource: "DC DCRA permits, OpenCV satellite construction detection",
+        dataSource: "DC building permits and satellite-based change detection",
         reasoning: "Development pattern shows rapid densification with limited affordable housing integration. Permit data reveals high-density residential construction without corresponding community facility expansion. The development is market-driven rather than community-driven, creating displacement risk.",
       },
       {
-        agentName: "Equity Analyst",
+        agentName: "Equity & housing",
         score: 34,
         confidence: 0.89,
         keyFindings: [
@@ -159,7 +221,7 @@ export const MOCK_RESULTS: Record<string, AnalysisResult> = {
       },
     ],
     devilsAdvocate: {
-      targetAgent: "Climate Resilience Agent",
+      targetAgent: "Climate resilience",
       challenge: "Your 18% green coverage increase is accurate but incomplete. WRI Aqueduct data shows water stress in the Anacostia watershed increased from 'medium-low' to 'medium-high' between 2020-2024. You're measuring tree planting without accounting for whether the urban forest is hydrologically sustainable. A 2.3°C heat reduction is real, but if the water infrastructure can't support the vegetation at scale, your improvement is temporary.",
       counterDataSource: "WRI Aqueduct, DC Water Long Range Plan 2024",
       specificDataPoint: "Anacostia River basin water stress index: 2.8 → 3.4 (2020-2024)",
@@ -184,7 +246,7 @@ export const MOCK_RESULTS: Record<string, AnalysisResult> = {
     dissentScore: 0.21,
     agents: [
       {
-        agentName: "Energy Systems Agent",
+        agentName: "Energy systems",
         score: 88,
         confidence: 0.92,
         keyFindings: [
@@ -196,7 +258,7 @@ export const MOCK_RESULTS: Record<string, AnalysisResult> = {
         reasoning: "Patagonia's energy performance significantly exceeds sector standards. Renewable electricity procurement is verified via renewable energy certificates, energy intensity trajectory shows sustained improvement, and capital allocation toward on-site generation reduces grid dependency. Energy systems are industry-leading.",
       },
       {
-        agentName: "Carbon Accounting Agent",
+        agentName: "Carbon accounting",
         score: 76,
         confidence: 0.85,
         keyFindings: [
@@ -208,7 +270,7 @@ export const MOCK_RESULTS: Record<string, AnalysisResult> = {
         reasoning: "Direct emissions control is strong with verified reduction trajectory. Scope 3 dominance is expected in apparel manufacturing. SBTi validation confirms science-based targets, but supplier engagement depth requires verification—74% of tier-1 suppliers report emissions, which is above sector average but not comprehensive.",
       },
       {
-        agentName: "Operations Agent",
+        agentName: "Operations",
         score: 82,
         confidence: 0.79,
         keyFindings: [
@@ -220,7 +282,7 @@ export const MOCK_RESULTS: Record<string, AnalysisResult> = {
         reasoning: "Operational sustainability is embedded in business model rather than add-on. Product design explicitly prioritizes repairability and longevity. Circular economy integration is functional, not performative—repair revenue is growing faster than new product revenue, indicating genuine demand-side shift.",
       },
       {
-        agentName: "Regulatory Compliance Agent",
+        agentName: "Regulatory compliance",
         score: 91,
         confidence: 0.88,
         keyFindings: [
@@ -233,7 +295,7 @@ export const MOCK_RESULTS: Record<string, AnalysisResult> = {
       },
     ],
     devilsAdvocate: {
-      targetAgent: "Operations Agent",
+      targetAgent: "Operations",
       challenge: "Your 72% recycled/regenerative materials claim is directionally correct but masks a substitution problem. 43% of that total is recycled polyester, which is derived from PET bottles—a feedstock that's increasingly allocated to bottle-to-bottle recycling due to regulatory pressure in the EU. Your supply chain depends on a material input that may become constrained. Additionally, microplastic shedding from synthetic textiles is unaccounted in your water intensity metric. You're measuring input water, not pollution output.",
       counterDataSource: "Ellen MacArthur Foundation Circular Economy Report 2024, OECD microplastic leakage data",
       specificDataPoint: "PET bottle collection rate for bottle reuse: 31% → 58% (EU, 2020-2024) - reducing feedstock availability for textile recycling",
@@ -284,7 +346,7 @@ export const MOCK_RESULTS: Record<string, AnalysisResult> = {
     dissentScore: 0.42,
     agents: [
       {
-        agentName: "Climate Resilience Agent",
+        agentName: "Climate resilience",
         score: 38,
         confidence: 0.81,
         keyFindings: [
@@ -292,11 +354,11 @@ export const MOCK_RESULTS: Record<string, AnalysisResult> = {
           "Tree canopy coverage: 12% - lowest in Austin metro area",
           "Urban heat island intensity: +8.2°F above regional average during summer",
         ],
-        dataSource: "NOAA Climate Data Online, Sentinel-2 thermal analysis",
-        reasoning: "East Austin faces compounding heat vulnerability with minimal natural cooling infrastructure. NDVI analysis shows net decline in vegetation coverage due to development pressure. The area lacks the tree canopy density necessary to mitigate extreme heat exposure.",
+        dataSource: "National climate records and satellite temperature mapping",
+        reasoning: "East Austin faces compounding heat vulnerability with minimal natural cooling infrastructure. Vegetation analysis shows net decline in green cover due to development pressure. The area lacks the tree canopy density necessary to mitigate extreme heat exposure.",
       },
       {
-        agentName: "Public Health Agent",
+        agentName: "Public health",
         score: 44,
         confidence: 0.77,
         keyFindings: [
@@ -308,7 +370,7 @@ export const MOCK_RESULTS: Record<string, AnalysisResult> = {
         reasoning: "Public health infrastructure is inadequate for climate adaptation. The combination of low walkability, insufficient shade, and rising heat creates acute health risk, particularly for outdoor workers and elderly residents.",
       },
       {
-        agentName: "Urban Development Agent",
+        agentName: "Urban development",
         score: 62,
         confidence: 0.73,
         keyFindings: [
@@ -316,11 +378,11 @@ export const MOCK_RESULTS: Record<string, AnalysisResult> = {
           "Commercial displacement: 34 local businesses closed, replaced by chain retail",
           "Infrastructure investment: focused on transportation, minimal green infrastructure",
         ],
-        dataSource: "Austin Building Permits, OpenCV construction detection",
+        dataSource: "Austin building permits and satellite-based construction tracking",
         reasoning: "Development is rapid but extractive. New construction adds density without proportional climate resilience infrastructure. The pattern suggests profit-driven development with minimal community benefit requirements.",
       },
       {
-        agentName: "Equity Analyst",
+        agentName: "Equity & housing",
         score: 29,
         confidence: 0.86,
         keyFindings: [
@@ -333,7 +395,7 @@ export const MOCK_RESULTS: Record<string, AnalysisResult> = {
       },
     ],
     devilsAdvocate: {
-      targetAgent: "Urban Development Agent",
+      targetAgent: "Urban development",
       challenge: "Your 'extractive development' framing ignores the $89M Project Connect transit investment, which includes three new MetroRapid stations in East Austin by 2027. That's public infrastructure specifically designed to serve existing residents, not luxury tenants. The development you're scoring as negative may actually be transit-oriented density that reduces per-capita vehicle emissions. Your score omits the climate benefit of reduced car dependency.",
       counterDataSource: "Capital Metro Project Connect Phase 1, Austin Transportation Dept modal shift analysis",
       specificDataPoint: "East Austin MetroRapid projected ridership: 12,400 daily trips, displacing 6,800 vehicle trips/day = ~4,200 tCO2e annual reduction",
@@ -358,7 +420,7 @@ export const MOCK_RESULTS: Record<string, AnalysisResult> = {
     dissentScore: 0.68,
     agents: [
       {
-        agentName: "Energy Systems Agent",
+        agentName: "Energy systems",
         score: 71,
         confidence: 0.79,
         keyFindings: [
@@ -370,7 +432,7 @@ export const MOCK_RESULTS: Record<string, AnalysisResult> = {
         reasoning: "Tesla's operational energy trajectory is improving, and its product (EVs + storage) enables broader grid decarbonization. Manufacturing energy intensity is declining as production scales. The business model is fundamentally aligned with energy transition.",
       },
       {
-        agentName: "Carbon Accounting Agent",
+        agentName: "Carbon accounting",
         score: 54,
         confidence: 0.72,
         keyFindings: [
@@ -382,7 +444,7 @@ export const MOCK_RESULTS: Record<string, AnalysisResult> = {
         reasoning: "Carbon accounting is directionally positive but lacks the rigor of SBTi validation. Scope 3 supply chain transparency is poor—supplier emissions data is incomplete, particularly for raw material extraction. The company benefits from EV use-phase emissions avoidance but doesn't fully account for supply chain impact.",
       },
       {
-        agentName: "Operations Agent",
+        agentName: "Operations",
         score: 49,
         confidence: 0.68,
         keyFindings: [
@@ -394,7 +456,7 @@ export const MOCK_RESULTS: Record<string, AnalysisResult> = {
         reasoning: "Operational sustainability lags behind energy and product impact. Battery recycling infrastructure exists but uptake is low due to fleet age—most Tesla batteries are still in first use. Water intensity in Texas is a material risk given aquifer depletion trends. Waste performance is below sector average.",
       },
       {
-        agentName: "Regulatory Compliance Agent",
+        agentName: "Regulatory compliance",
         score: 67,
         confidence: 0.81,
         keyFindings: [
@@ -407,7 +469,7 @@ export const MOCK_RESULTS: Record<string, AnalysisResult> = {
       },
     ],
     devilsAdvocate: {
-      targetAgent: "Energy Systems Agent",
+      targetAgent: "Energy systems",
       challenge: "Your use-phase emissions avoidance claim assumes grid average displacement, but a 2024 MIT study shows that incremental EV charging in Texas and California increasingly occurs during natural gas peaker hours due to time-of-use rate structures. The marginal emissions factor for EV charging is 18-34% higher than the grid average you're implicitly using. Your 'enabling grid renewables' framing for Megapack is true in theory but ignores that 43% of deployed units are in diesel displacement applications in off-grid industrial sites—a lower-carbon-intensity use case than grid storage.",
       counterDataSource: "MIT Energy Initiative 2024, Tesla Megapack deployment database (public filings)",
       specificDataPoint: "Marginal emissions factor for EV charging (Texas, 6-9pm): 0.62 kg CO2/kWh vs. grid average 0.42 kg CO2/kWh",
@@ -447,9 +509,28 @@ export const MOCK_RESULTS: Record<string, AnalysisResult> = {
   },
 };
 
-// Agent streaming simulation - realistic token-by-token text
+function cloneAnalysisFromTemplate(templateId: string, targetIds: readonly string[]) {
+  const template = MOCK_RESULTS[templateId];
+  if (!template) return;
+  for (const id of targetIds) {
+    const entity = ENTITIES.find((e) => e.id === id);
+    if (entity) MOCK_RESULTS[id] = { ...template, entity };
+  }
+}
+
+cloneAnalysisFromTemplate("tesla", ["amazon", "apple", "google", "nvidia", "samsung"]);
+cloneAnalysisFromTemplate("east-austin", [
+  "hub-austin-tx",
+  "hub-boston-ma",
+  "hub-nyc-ny",
+  "hub-sf-bay-ca",
+  "hub-seattle-wa",
+  "hub-washington-dc",
+]);
+
+// Agent streaming simulation - word-chunked display text
 export const generateAgentStream = (agent: AgentOutput): string[] => {
-  const fullText = `**${agent.agentName}** (Confidence: ${(agent.confidence * 100).toFixed(0)}%)
+  const fullText = `**${agent.agentName}** (about ${(agent.confidence * 100).toFixed(0)}% sure)
 
 Score: ${agent.score}/100
 
@@ -458,7 +539,7 @@ ${agent.reasoning}
 **Key Findings:**
 ${agent.keyFindings.map((f) => `• ${f}`).join("\n")}
 
-**Data Sources:** ${agent.dataSource}`;
+**Sources:** ${agent.dataSource}`;
 
   // Split into word chunks for streaming effect
   const words = fullText.split(" ");
