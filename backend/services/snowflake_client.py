@@ -97,6 +97,98 @@ def save_verdict(
             cursor.close()
 
 
+def _parse_json_column(value):
+    """Normalize Snowflake VARIANT / string JSON into Python objects."""
+    if value is None:
+        return None
+    if isinstance(value, (dict, list)):
+        return value
+    if isinstance(value, str):
+        try:
+            return json.loads(value)
+        except json.JSONDecodeError:
+            return None
+    return None
+
+
+def get_latest_analysis(entity_id: str) -> dict | None:
+    """
+    Latest verdict row for an entity, including parsed agent_scores_json and judge_output_json.
+    Returns None if no row, connection failure, or error.
+    """
+    cursor = None
+    try:
+        conn = get_connection()
+        if conn is None:
+            return None
+
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT entity_id, target, mode, final_score, verdict, trajectory, dissent_score,
+                   agent_scores_json, judge_output_json, created_at
+            FROM verdicts
+            WHERE entity_id = %s
+            ORDER BY created_at DESC
+            LIMIT 1
+            """,
+            (entity_id,),
+        )
+        row = cursor.fetchone()
+        if not row:
+            return None
+
+        keys = (
+            "entity_id",
+            "target",
+            "mode",
+            "final_score",
+            "verdict",
+            "trajectory",
+            "dissent_score",
+            "agent_scores_json",
+            "judge_output_json",
+            "created_at",
+        )
+        data = dict(zip(keys, row))
+        agent_raw = _parse_json_column(data.get("agent_scores_json"))
+        judge_raw = _parse_json_column(data.get("judge_output_json"))
+
+        if isinstance(agent_raw, list):
+            agent_scores = agent_raw
+        elif agent_raw is None:
+            agent_scores = []
+        else:
+            agent_scores = [agent_raw]
+
+        if judge_raw is not None and not isinstance(judge_raw, dict):
+            judge_output = {"value": judge_raw}
+        else:
+            judge_output = judge_raw if judge_raw is not None else {}
+
+        created_at = data.get("created_at")
+        return {
+            "entity_id": data.get("entity_id"),
+            "target": data.get("target"),
+            "mode": data.get("mode"),
+            "final_score": float(data["final_score"]) if data.get("final_score") is not None else None,
+            "verdict": data.get("verdict"),
+            "trajectory": data.get("trajectory"),
+            "dissent_score": float(data["dissent_score"])
+            if data.get("dissent_score") is not None
+            else None,
+            "agent_scores": agent_scores,
+            "judge_output": judge_output,
+            "created_at": str(created_at) if created_at is not None else None,
+        }
+    except Exception as e:
+        logger.exception("get_latest_analysis failed: %s", e)
+        return None
+    finally:
+        if cursor is not None:
+            cursor.close()
+
+
 def get_verdict_history(entity_id: str) -> list:
     cursor = None
     try:
