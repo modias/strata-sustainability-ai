@@ -1,0 +1,27 @@
+External code and data sources used in STRATA:
+
+LIBRARIES
+- Leaflet.js — https://leafletjs.com (BSD-2)
+- Chart.js — https://chartjs.org (MIT)
+- html2canvas — https://html2canvas.hertzen.com (MIT)
+- date-fns — https://date-fns.org (MIT)
+- FastAPI — https://fastapi.tiangolo.com (MIT)
+- lucide-react — https://lucide.dev (MIT)
+
+DATA SOURCES
+- Sentinel-2 / Copernicus — copernicus.eu/en/data-access
+- Census ACS API — api.census.gov
+- EPA EnviroAtlas — enviroatlas.epa.gov
+- OpenAQ — api.openaq.org
+- CDP Open Data — data.cdp.net
+- SEC EDGAR — efts.sec.gov
+- EPA GHGRP — ghgdata.epa.gov
+- NOAA Climate — ncdc.noaa.gov
+- Nominatim / OpenStreetMap — nominatim.openstreetmap.org
+- ESRI World Imagery tiles — server.arcgisonline.com
+- Mapillary — mapillary.com/developer
+- WRI Aqueduct — wri.org/aqueduct
+- FCC Block API — geo.fcc.gov
+
+AI
+- Google Gemini 2.5 Flash — aistudio.google.com
