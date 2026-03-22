@@ -70,23 +70,13 @@ def _cache_key(system_prompt: str, evidence: dict) -> str:
     return "strata:gemini:" + hashlib.sha256(raw.encode()).hexdigest()
 
 
-# Used only if list_models() fails (offline, etc.)
-_STATIC_FALLBACK_MODELS = [
-    "gemini-2.5-flash",
-    "gemini-2.0-flash",
-    "gemini-2.0-flash-001",
-    "gemini-flash-latest",
-    "gemini-1.5-flash-002",
-    "gemini-1.5-flash-8b",
-]
+# Primary model for GenerativeModel(model_name=...). Override with GEMINI_MODEL env (comma-separated).
+DEFAULT_GEMINI_MODEL = "gemini-2.5-flash"
 
-# Try these first when present in list_models (avoids flash-image, flash-lite ranking above core Flash).
-_PREFERRED_TEXT_MODELS = [
-    "gemini-2.5-flash",
+_STATIC_FALLBACK_MODELS = [
+    DEFAULT_GEMINI_MODEL,
     "gemini-2.0-flash",
-    "gemini-2.5-pro",
     "gemini-2.0-flash-001",
-    "gemini-3-flash-preview",
     "gemini-flash-latest",
     "gemini-1.5-flash-002",
     "gemini-1.5-flash-8b",
@@ -94,80 +84,75 @@ _PREFERRED_TEXT_MODELS = [
 
 _discovered_models_cache: Optional[list[str]] = None
 
-
-def _is_text_generate_model(short: str) -> bool:
-    """Skip image / lite / embedding variants that are wrong for JSON text agents."""
-    s = short.lower()
-    if any(x in s for x in ("embed", "tts", "imagen", "aqa", "text-embedding")):
-        return False
-    if "-image" in s or s.endswith("image") or "image-preview" in s:
-        return False
-    return True
+# Short model ids from AI Studio, e.g. gemini-2.5-flash (SDK prepends models/)
+_MODEL_SHORT_ID_RE = re.compile(r"^[a-zA-Z][a-zA-Z0-9._-]{1,120}$")
+_TUNED_MODEL_PREFIX_RE = re.compile(r"^tunedModels/[a-zA-Z0-9._-]+$")
 
 
-def _rank_short_id(short: str) -> int:
-    """Higher = try first (core Flash before lite/preview)."""
-    s = short.lower()
-    if not _is_text_generate_model(short):
-        return -1
-    # Deprioritize lite and long preview IDs so core flash goes first among 2.x family
-    if "flash-lite" in s or "-lite" in s:
-        return 300
-    if "preview" in s and "gemini-3" not in s:
-        return 350
-    if "gemini-2.5" in s and "flash" in s and "lite" not in s and "image" not in s:
-        return 1000
-    if "gemini-2.0" in s and "flash" in s and "lite" not in s:
-        return 900
-    if "gemini" in s and "flash" in s:
-        return 800
-    if "gemini" in s and "pro" in s:
-        return 500
-    if "gemini" in s:
-        return 400
-    return 0
+def _normalize_model_id(s: str) -> Optional[str]:
+    """
+    Reject mistaken API keys in GEMINI_MODEL and normalize ids.
+    400 'unexpected model name format' usually means an AIza... key was set as GEMINI_MODEL,
+    or a full resource path was pasted and only part of it was used.
+    """
+    raw = (s or "").strip().strip('"').strip("'")
+    raw = raw.replace("\ufeff", "").strip()
+    if not raw:
+        return None
+    # User pasted Google API key into GEMINI_MODEL by mistake
+    if raw.startswith("AIza") and len(raw) > 24:
+        logger.error(
+            "Invalid GEMINI_MODEL: value looks like GEMINI_API_KEY (starts with AIza). "
+            "Put the key only in GEMINI_API_KEY; GEMINI_MODEL must be a model id such as gemini-2.5-flash."
+        )
+        return None
+    # Strip repeated "models/" prefixes (e.g. models/models/gemini-...)
+    while raw.lower().startswith("models/"):
+        raw = raw[7:].strip()
+    if raw.startswith("tunedModels/"):
+        return raw if _TUNED_MODEL_PREFIX_RE.match(raw) else None
+    # Pasted REST path: .../models/gemini-2.5-flash — keep last segment only
+    if "/" in raw:
+        raw = raw.split("/")[-1].strip()
+    if not raw:
+        return None
+    if not _MODEL_SHORT_ID_RE.match(raw):
+        logger.warning("Skipping invalid Gemini model id (bad format): %r", raw[:100])
+        return None
+    return raw
 
 
-def _discover_models_for_generate() -> list[str]:
-    """List models with generateContent; prefer standard text Flash models, not flash-image."""
-    discovered: set[str] = set()
-    try:
-        for m in genai.list_models():
-            methods = getattr(m, "supported_generation_methods", None) or []
-            if "generateContent" not in methods:
-                continue
-            full = getattr(m, "name", "") or ""
-            short = full.split("/", 1)[-1] if full else ""
-            if short and _is_text_generate_model(short):
-                discovered.add(short)
-    except Exception as e:
-        logger.warning("genai.list_models failed, using static list: %s", e)
-        return list(_STATIC_FALLBACK_MODELS)
+def _finalize_model_list(ids: list[str]) -> list[str]:
+    out: list[str] = []
+    seen: set[str] = set()
+    for x in ids:
+        n = _normalize_model_id(x)
+        if n and n not in seen:
+            seen.add(n)
+            out.append(n)
+    return out
 
-    if not discovered:
-        return list(_STATIC_FALLBACK_MODELS)
 
-    # Preferred order first, then remaining by rank
-    ordered: list[str] = []
-    for p in _PREFERRED_TEXT_MODELS:
-        if p in discovered:
-            ordered.append(p)
-    rest = sorted(
-        (s for s in discovered if s not in ordered),
-        key=lambda x: (-_rank_short_id(x), x),
-    )
-    ordered.extend(rest)
-    return ordered
+def _default_static_candidates() -> list[str]:
+    """DEFAULT_GEMINI_MODEL first, then other fallbacks for quota/404 rotation (no list_models)."""
+    return _finalize_model_list(list(_STATIC_FALLBACK_MODELS))
 
 
 def _model_candidates() -> list[str]:
-    """Env override, else API discovery (cached), else static fallback."""
+    """Env override, else DEFAULT_GEMINI_MODEL + static fallbacks (cached)."""
     global _discovered_models_cache
     raw = os.environ.get("GEMINI_MODEL", "").strip()
     if raw:
-        return [m.strip() for m in raw.split(",") if m.strip()]
+        parsed = _finalize_model_list([p.strip() for p in raw.split(",") if p.strip()])
+        if parsed:
+            logger.info("GEMINI_MODEL override (%s ids): %s", len(parsed), parsed[:6])
+            return parsed
+        logger.warning("GEMINI_MODEL is set but no valid model ids; using default static fallback")
+        _discovered_models_cache = None  # force fresh list; env may have had API key pasted here
     if _discovered_models_cache is None:
-        _discovered_models_cache = _discover_models_for_generate()
+        _discovered_models_cache = _default_static_candidates()
+        if not _discovered_models_cache:
+            _discovered_models_cache = _finalize_model_list([DEFAULT_GEMINI_MODEL])
         logger.info(
             "Gemini model order (%s candidates): %s",
             len(_discovered_models_cache),
@@ -182,7 +167,13 @@ def _should_try_next_model(exc: Exception) -> bool:
         return True
     if isinstance(exc, google.api_core.exceptions.ResourceExhausted):
         return True
+    if isinstance(exc, google.api_core.exceptions.BadRequest):
+        s = str(exc).lower()
+        if "model" in s and ("format" in s or "unexpected" in s or "invalid" in s or "name" in s):
+            return True
     s = str(exc).lower()
+    if "unexpected model name format" in s:
+        return True
     if "429" in s or "resource exhausted" in s:
         return True
     if "quota" in s and ("exceeded" in s or "limit" in s):
@@ -237,6 +228,17 @@ def run_agent(system_prompt: str, evidence_packet: dict) -> dict:
 
         genai.configure(api_key=gemini_key)
 
+        if not _model_candidates():
+            return {
+                "error": "No valid Gemini model ids (check GEMINI_MODEL uses names like gemini-2.5-flash, not your API key)",
+                "score": 50,
+                "confidence": 0.5,
+                "stance": "neutral",
+                "claim": "Analysis unavailable",
+                "positives": [],
+                "risks": [],
+            }
+
         schema_reminder = """
 CRITICAL: Your response must be a single raw JSON object.
 - Start your response with {
@@ -273,6 +275,7 @@ CRITICAL: Your response must be a single raw JSON object.
             if attempt_idx >= max_models:
                 logger.warning("Gemini: stopping after %s models", max_models)
                 break
+            # Primary: DEFAULT_GEMINI_MODEL ("gemini-2.5-flash"); then fallbacks on quota/404.
             model = genai.GenerativeModel(model_name=model_name)
             for cfg, label in ((gen_cfg_json, "json"), (gen_cfg_plain, "plain")):
                 try:

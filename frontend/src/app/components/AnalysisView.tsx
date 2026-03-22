@@ -9,7 +9,6 @@ import { AgentCard } from "./AgentCard";
 import { VerdictCard } from "./VerdictCard";
 import { RadarChart } from "./RadarChart";
 import { DissentMap } from "./DissentMap";
-import { SuggestedQuestions } from "./SuggestedQuestions";
 import { NoExpansionActions } from "./NoExpansionActions";
 import { MapView } from "./MapView";
 import {
@@ -22,6 +21,7 @@ import {
   type Verdict,
   type DissentLevel,
   type DevilsAdvocateChallenge,
+  type Entity,
 } from "../data/mockData";
 import { VerdictHistory } from "./VerdictHistory";
 import { API_BASE } from "../lib/apiBase";
@@ -31,9 +31,26 @@ const STREAM_DEMO_TARGET: Record<string, string> = {
   "anacostia-dc": "anacostia",
   "phoenix-south": "phoenix_south",
   "detroit-midtown": "detroit_midtown",
+  "greenpoint-brooklyn": "greenpoint-brooklyn",
+  "mission-district-sf": "mission-district-sf",
   tesla: "tesla",
   amazon: "amazon",
   microsoft: "microsoft",
+  apple: "apple",
+  google: "google",
+  nvidia: "nvidia",
+  samsung: "samsung",
+  "hub-austin-tx": "hub-austin-tx",
+  "hub-boston-ma": "hub-boston-ma",
+  "hub-new-york-ny": "hub-new-york-ny",
+  "hub-san-francisco-ca": "hub-san-francisco-ca",
+  "hub-nyc-ny": "hub-nyc-ny",
+  "hub-sf-bay-ca": "hub-sf-bay-ca",
+  "hub-seattle-wa": "hub-seattle-wa",
+  "hub-washington-dc": "hub-washington-dc",
+  unilever: "unilever",
+  patagonia: "patagonia",
+  "east-austin": "east-austin",
 };
 
 function geminiAgentToAgentOutput(raw: Record<string, unknown>, index: number): AgentOutput {
@@ -54,6 +71,54 @@ function geminiAgentToAgentOutput(raw: Record<string, unknown>, index: number): 
     dataSource: String(raw.dataSource ?? "Google Gemini"),
     reasoning: String(raw.reasoning ?? claim),
   };
+}
+
+function numOrUndef(v: unknown): number | undefined {
+  if (v == null) return undefined;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : undefined;
+}
+
+/** CV numbers from a flat or evidence-wrapped agent/judge payload */
+function extractCvFromPacketLike(source: Record<string, unknown>): Partial<Entity> {
+  const ev =
+    source.evidence && typeof source.evidence === "object"
+      ? (source.evidence as Record<string, unknown>)
+      : {};
+  const gsr = numOrUndef(
+    source.green_space_ratio ??
+      source.greenSpaceRatio ??
+      ev.green_space_ratio ??
+      ev.greenSpaceRatio
+  );
+  const his = numOrUndef(
+    source.heat_intensity_score ??
+      source.heatIntensityScore ??
+      ev.heat_intensity_score ??
+      ev.heatIntensityScore
+  );
+  const pm = numOrUndef(
+    source.air_quality_pm25 ??
+      source.airQualityPm25 ??
+      ev.air_quality_pm25 ??
+      ev.airQualityPm25
+  );
+  const out: Partial<Entity> = {};
+  if (gsr !== undefined) out.greenSpaceRatio = gsr;
+  if (his !== undefined) out.heatIntensityScore = Math.round(his);
+  if (pm !== undefined) out.airQualityPm25 = pm;
+  return out;
+}
+
+function mergeCvFromJudge(judge: Record<string, unknown>): Partial<Entity> {
+  let acc: Partial<Entity> = { ...extractCvFromPacketLike(judge) };
+  for (const key of ["evidence", "evidence_packet", "evidencePacket"] as const) {
+    const v = judge[key];
+    if (v && typeof v === "object" && !Array.isArray(v)) {
+      acc = { ...acc, ...extractCvFromPacketLike(v as Record<string, unknown>) };
+    }
+  }
+  return acc;
 }
 
 function judgeToUpdates(judge: Record<string, unknown>) {
@@ -267,6 +332,7 @@ function mergeJudgeIntoResult(prev: AnalysisResult, judge: Record<string, unknow
   const support = String(u.topSupportReason);
   const dissent = String(u.topDissentReason);
   const rationale = String(u.rationale);
+  const cvFromJudge = mergeCvFromJudge(judge);
   const radarData = prev.agents.map((a, index) => ({
     dimension: `${index + 1}. ${a.agentName}`,
     score: a.score,
@@ -274,6 +340,7 @@ function mergeJudgeIntoResult(prev: AnalysisResult, judge: Record<string, unknow
   }));
   return {
     ...prev,
+    entity: { ...prev.entity, ...cvFromJudge },
     verdict,
     dissentLevel,
     dissentScore,
@@ -306,8 +373,45 @@ export function AnalysisView() {
   const [error, setError] = useState<string | null>(null);
   const [usedMockFallback, setUsedMockFallback] = useState(false);
   const [historyKey, setHistoryKey] = useState(0);
+  const [userQuestion, setUserQuestion] = useState("");
+  const [questionAnswer, setQuestionAnswer] = useState("");
+  const [askingQuestion, setAskingQuestion] = useState(false);
 
   const snowflakeHistoryEntityId = entityId ? SNOWFLAKE_ENTITY_ID[entityId] ?? entityId : "";
+
+  const handleAskQuestion = async (overrideQ?: string) => {
+    const q = overrideQ ?? userQuestion;
+    if (!q.trim()) return;
+    setAskingQuestion(true);
+    setQuestionAnswer("");
+    try {
+      const res = await fetch(`${API_BASE}/ask`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          question: q,
+          entity: result?.entity?.name,
+          verdict: result?.verdict,
+          agents: agentOutputs,
+          context:
+            (result as { rationale?: string } | null)?.rationale ??
+            result?.devilsAdvocate?.specificDataPoint ??
+            result?.devilsAdvocate?.challenge,
+        }),
+      });
+      const data = (await res.json()) as { answer?: string };
+      if (!res.ok) {
+        setQuestionAnswer(data.answer ?? `Request failed (${res.status})`);
+        return;
+      }
+      setQuestionAnswer(data.answer ?? "No answer available");
+    } catch {
+      setQuestionAnswer("Could not reach the committee. Try again.");
+    } finally {
+      setAskingQuestion(false);
+      setUserQuestion("");
+    }
+  };
 
   const savePoint = useCallback((phase: string, data: SavePointData) => {
     if (!entityId) return;
@@ -424,10 +528,14 @@ export function AnalysisView() {
     const runMockStreaming = async (r: AnalysisResult) => {
       for (let i = 0; i < r.agents.length; i++) {
         if (cancelled) return;
+        const agent = r.agents[i];
         setStreamingAgentIndex(i);
         setProgress(((i + 1) / r.agents.length) * 100);
+        setAgentOutputs((prev) => [...prev, agent]);
+        setTimeout(() => {
+          document.getElementById("agent-list")?.scrollIntoView({ behavior: "smooth", block: "end" });
+        }, 100);
 
-        const agent = r.agents[i];
         const chunks = generateAgentStream(agent);
 
         for (let j = 0; j < chunks.length; j++) {
@@ -439,8 +547,9 @@ export function AnalysisView() {
         }
 
         await new Promise((resolve) => setTimeout(resolve, 200));
-        setAgentOutputs((prev) => [...prev, agent]);
       }
+
+      setStreamingAgentIndex(-1);
 
       await new Promise((resolve) => setTimeout(resolve, 500));
       setShowDevilsAdvocate(true);
@@ -490,7 +599,8 @@ export function AnalysisView() {
 
       let agentCount = 0;
       const streamTarget = STREAM_DEMO_TARGET[entityId] ?? entityId;
-      const modeParam = mode === "neighborhood" ? "neighborhood" : "company";
+      const modeParam =
+        mode === "neighborhood" ? "neighborhood" : mode === "hub" ? "hub" : "company";
 
       fallbackTimer = setTimeout(() => {
         if (agentCount === 0) {
@@ -521,15 +631,29 @@ export function AnalysisView() {
         const ev = e as MessageEvent;
         const raw = JSON.parse(ev.data) as Record<string, unknown>;
         const agent = geminiAgentToAgentOutput(raw, agentCount);
+        const rawName = String(raw.name ?? "");
         agentCount++;
         setResult((prev) => {
           if (!prev) return null;
           const nextAgents = [...(prev.agents ?? []), agent];
-          const nextResult = { ...prev, agents: nextAgents };
+          let nextEntity = prev.entity;
+          if (rawName === "Environmental" || rawName === "Risk") {
+            const cv = extractCvFromPacketLike(raw);
+            nextEntity = {
+              ...prev.entity,
+              greenSpaceRatio: cv.greenSpaceRatio ?? prev.entity.greenSpaceRatio,
+              heatIntensityScore: cv.heatIntensityScore ?? prev.entity.heatIntensityScore,
+              airQualityPm25: cv.airQualityPm25 ?? prev.entity.airQualityPm25,
+            };
+          }
+          const nextResult = { ...prev, agents: nextAgents, entity: nextEntity };
           savePoint("streaming", { result: nextResult, agents: nextAgents });
           return nextResult;
         });
         setAgentOutputs((prev) => [...prev, agent]);
+        setTimeout(() => {
+          document.getElementById("agent-list")?.scrollIntoView({ behavior: "smooth", block: "end" });
+        }, 100);
         setProgress((agentCount / EXPECTED_AGENT_STREAM_COUNT) * 100);
       });
 
@@ -698,7 +822,11 @@ export function AnalysisView() {
       <div className="container mx-auto px-4 py-8">
         {(mode === "neighborhood" || mode === "hub") && result.entity.location && (
           <div className="mb-8">
-            <MapView location={result.entity.location} name={result.entity.name} />
+            <MapView
+              location={result.entity.location}
+              name={result.entity.name}
+              greenScore={result.entity.greenSpaceRatio}
+            />
           </div>
         )}
 
@@ -727,18 +855,32 @@ export function AnalysisView() {
 
         <div className="mb-8">
           <h2 className="text-2xl font-bold text-white mb-4">Multi-angle review</h2>
-          <div className="grid grid-cols-1 gap-4">
-            {result.agents.map((agent, index) => (
-              <AgentCard
-                key={`${agent.agentName}-${index}`}
-                agent={agent}
-                isStreaming={streamingAgentIndex === index}
-                streamedText={streamedText[index]}
-                isComplete={
-                  phase === "complete" ? index < result.agents.length : index < agentOutputs.length
-                }
-              />
-            ))}
+          {phase === "streaming" && (
+            <div className="flex items-center gap-2 text-xs text-green-400 font-mono mb-3 animate-pulse">
+              <span>●</span>
+              <span>COMMITTEE IN SESSION — {agentOutputs.length} of 4 agents responded</span>
+            </div>
+          )}
+          <div id="agent-list" className="grid grid-cols-1 gap-4">
+            {agentOutputs.length > 0 &&
+              agentOutputs.map((agent, index) => (
+                <AgentCard
+                  key={`${agent.agentName}-${index}`}
+                  agent={agent}
+                  isStreaming={streamingAgentIndex === index}
+                  streamedText={streamedText[index]}
+                  isComplete={
+                    phase === "complete" ||
+                    streamingAgentIndex !== index ||
+                    streamingAgentIndex < 0
+                  }
+                  className={
+                    phase === "streaming" && index === agentOutputs.length - 1
+                      ? "ring-1 ring-green-400/50 animate-pulse"
+                      : ""
+                  }
+                />
+              ))}
           </div>
         </div>
 
@@ -763,9 +905,132 @@ export function AnalysisView() {
           </div>
         )}
 
-        {showVerdict && (
+        {result && phase === "complete" && (
           <div className="mb-8">
-            <SuggestedQuestions questions={result.suggestedQuestions} verdict={result.verdict} />
+            <h2 className="text-lg font-semibold text-white mb-4">Sustainability Recommendations</h2>
+            <div className="space-y-3">
+              {[
+                {
+                  action:
+                    result.verdict === "DECLINING" || result.verdict === "CONTESTED"
+                      ? "Immediate: Commission independent displacement impact assessment"
+                      : "Immediate: Expand green infrastructure to underserved areas",
+                  impact: "High",
+                  timeframe: "90 days",
+                  cost: "$0 capex",
+                },
+                {
+                  action:
+                    result.verdict === "DECLINING"
+                      ? "Short-term: Establish community benefit agreement for all new permits"
+                      : "Short-term: Implement green roof requirements for new construction",
+                  impact: "High",
+                  timeframe: "6 months",
+                  cost: "Policy change",
+                },
+                {
+                  action: "Long-term: Set measurable green coverage targets with annual reporting",
+                  impact: "Medium",
+                  timeframe: "12 months",
+                  cost: "< $50k",
+                },
+              ].map((rec, i) => (
+                <div key={i} className="p-4 rounded-lg border border-border bg-card">
+                  <div className="font-medium text-sm mb-2">{rec.action}</div>
+                  <div className="flex gap-4 text-xs text-muted-foreground font-mono">
+                    <span className="text-green-400">Impact: {rec.impact}</span>
+                    <span>{rec.timeframe}</span>
+                    <span>{rec.cost}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {phase === "complete" && (
+          <div className="mb-8">
+            <h2 className="text-lg font-semibold text-white mb-4">Ask the Committee</h2>
+            <div className="flex gap-2 mb-4">
+              <input
+                type="text"
+                value={userQuestion}
+                onChange={(e) => setUserQuestion(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    void handleAskQuestion();
+                  }
+                }}
+                placeholder="Ask anything about this analysis..."
+                className="flex-1 bg-card border border-border rounded-lg px-4 py-2 text-sm outline-none focus:border-green-400/50 transition-colors"
+              />
+              <button
+                type="button"
+                onClick={() => void handleAskQuestion()}
+                disabled={!userQuestion.trim() || askingQuestion}
+                className="px-4 py-2 bg-green-400/10 border border-green-400/30 text-green-400 rounded-lg text-sm font-mono hover:bg-green-400/20 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                {askingQuestion ? "Thinking..." : "Ask →"}
+              </button>
+            </div>
+
+            {questionAnswer && (
+              <div className="p-4 rounded-lg border border-green-400/20 bg-green-400/5 text-sm leading-relaxed text-slate-200">
+                {questionAnswer}
+              </div>
+            )}
+
+            <div className="flex flex-wrap gap-2 mt-3">
+              {[
+                "Who benefits from this investment?",
+                "What would change this verdict?",
+                "Which agent has lowest confidence?",
+                "What is the displacement risk?",
+              ].map((q) => (
+                <button
+                  key={q}
+                  type="button"
+                  onClick={() => {
+                    setUserQuestion(q);
+                    void handleAskQuestion(q);
+                  }}
+                  className="text-xs px-3 py-1 rounded-full border border-border text-muted-foreground hover:text-foreground hover:border-green-400/30 transition-colors"
+                >
+                  {q}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {showVerdict && result && result.entity && (
+          <div className="mb-6 p-4 rounded-lg border border-border bg-card">
+            <div className="text-xs font-mono uppercase tracking-widest text-muted-foreground mb-3">
+              CV Metrics
+            </div>
+            <div className="grid grid-cols-3 gap-4">
+              <div>
+                <div className="text-xs text-muted-foreground mb-1">Green Coverage</div>
+                <div className="text-xl font-bold text-green-400">
+                  {result.entity.greenSpaceRatio != null
+                    ? `${(result.entity.greenSpaceRatio * 100).toFixed(0)}%`
+                    : "—"}
+                </div>
+              </div>
+              <div>
+                <div className="text-xs text-muted-foreground mb-1">Heat Intensity</div>
+                <div className="text-xl font-bold text-orange-400">
+                  {result.entity.heatIntensityScore ?? "—"}
+                </div>
+              </div>
+              <div>
+                <div className="text-xs text-muted-foreground mb-1">Air Quality PM2.5</div>
+                <div className="text-xl font-bold text-blue-400">
+                  {result.entity.airQualityPm25 ?? "—"}
+                </div>
+              </div>
+            </div>
           </div>
         )}
 

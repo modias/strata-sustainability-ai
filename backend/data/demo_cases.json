@@ -9,16 +9,6 @@
     "events": ["gigafactory expansion in Nevada", "solar roof initiative launch"],
     "risks": ["water usage concerns at Gigafactory", "supply chain emissions from battery materials"]
   },
-  "amazon": {
-    "mode": "company",
-    "green_space_ratio": 0.22,
-    "air_quality_pm25": 9.8,
-    "heat_intensity_score": 58,
-    "energy_mix_signal": "improving",
-    "affordability_trend": "stable",
-    "events": ["Climate Pledge net-zero by 2040", "AWS 100% renewable energy commitment"],
-    "risks": ["absolute emissions growing with scale", "geographic mismatch of clean power to load"]
-  },
   "microsoft": {
     "mode": "company",
     "green_space_ratio": 0.24,
@@ -26,8 +16,58 @@
     "heat_intensity_score": 45,
     "energy_mix_signal": "positive",
     "affordability_trend": "stable",
-    "events": ["carbon negative pledge by 2030", "renewable data centers expansion"],
-    "risks": ["Scope 3 supply chain emissions", "AI compute energy demand increasing"]
+    "events": ["Carbon negative pledge by 2030", "Renewable data centers expansion", "AI for Earth program"],
+    "risks": ["AI compute energy demand increasing rapidly", "Scope 3 supply chain emissions", "Absolute emissions growing with AI workloads"]
+  },
+  "amazon": {
+    "mode": "company",
+    "green_space_ratio": 0.22,
+    "air_quality_pm25": 9.8,
+    "heat_intensity_score": 58,
+    "energy_mix_signal": "improving",
+    "affordability_trend": "stable",
+    "events": ["Climate Pledge net-zero by 2040", "AWS 100% renewable energy commitment", "Electric delivery van fleet rollout"],
+    "risks": ["Absolute emissions growing with scale", "Geographic mismatch of clean power to load", "Scope 3 logistics emissions"]
+  },
+  "nvidia": {
+    "mode": "company",
+    "green_space_ratio": 0.18,
+    "air_quality_pm25": 11.2,
+    "heat_intensity_score": 62,
+    "energy_mix_signal": "mixed",
+    "affordability_trend": "stable",
+    "events": ["Data center efficiency improvements", "AI chip energy optimization programs"],
+    "risks": ["Massive GPU energy consumption growth", "Customer data center emissions (Scope 3)", "No SBTi target filed"]
+  },
+  "apple": {
+    "mode": "company",
+    "green_space_ratio": 0.31,
+    "air_quality_pm25": 7.4,
+    "heat_intensity_score": 38,
+    "energy_mix_signal": "positive",
+    "affordability_trend": "stable",
+    "events": ["Carbon neutral by 2030 across entire supply chain", "100% recycled aluminum in products", "Clean energy supplier program"],
+    "risks": ["Manufacturing Scope 3 dominates footprint", "Rare earth mining in supply chain", "Product replacement cycle drives emissions"]
+  },
+  "google": {
+    "mode": "company",
+    "green_space_ratio": 0.28,
+    "air_quality_pm25": 8.8,
+    "heat_intensity_score": 41,
+    "energy_mix_signal": "positive",
+    "affordability_trend": "stable",
+    "events": ["Carbon free energy 24/7 by 2030 commitment", "Largest corporate renewable buyer globally", "AI optimizing data center cooling"],
+    "risks": ["AI workloads increasing absolute energy consumption", "24/7 carbon free energy not yet achieved", "Scope 3 hardware manufacturing gap"]
+  },
+  "samsung": {
+    "mode": "company",
+    "green_space_ratio": 0.15,
+    "air_quality_pm25": 18.4,
+    "heat_intensity_score": 71,
+    "energy_mix_signal": "mixed",
+    "affordability_trend": "stable",
+    "events": ["RE100 commitment by 2050", "Eco-conscious product line expansion"],
+    "risks": ["Semiconductor manufacturing extremely energy intensive", "Korea grid heavily fossil fuel dependent", "RE100 target far behind peers"]
   },
   "anacostia": {
     "mode": "neighborhood",
@@ -44,8 +84,8 @@
     "air_quality_pm25": 18.8,
     "heat_intensity_score": 89,
     "affordability_trend": "stable",
-    "events": ["city shade structure budget approved", "solar adoption program launched"],
-    "risks": ["extreme heat 43C+ for 28 days annually", "no shade on primary arterials"]
+    "events": ["City shade structure budget approved", "Solar adoption program launched", "Heat emergency cooling centers opened"],
+    "risks": ["Extreme heat 43C+ for 28 days annually", "No shade on primary arterials", "Impervious surface 78% trapping heat"]
   },
   "detroit_midtown": {
     "mode": "neighborhood",
@@ -53,7 +93,43 @@
     "air_quality_pm25": 9.2,
     "heat_intensity_score": 38,
     "affordability_trend": "moderate",
-    "events": ["Midtown Detroit Inc investment zone active", "bike lane installation ongoing"],
-    "risks": ["18% rent increase over 18 months", "affordable unit ratio depends on incentive policy"]
+    "events": ["Midtown Detroit Inc investment zone active", "Bike lane installation ongoing", "New mixed-use development with 31% affordable units"],
+    "risks": ["18% rent increase over 18 months", "Affordable unit ratio depends on incentive policy", "Gentrification pressure from revival"]
+  },
+  "greenpoint-brooklyn": {
+    "mode": "neighborhood",
+    "green_space_ratio": 0.21,
+    "air_quality_pm25": 13.1,
+    "heat_intensity_score": 54,
+    "affordability_trend": "declining",
+    "events": ["Greenpoint waterfront park expansion", "New bike infrastructure installed", "Superfund site remediation ongoing"],
+    "risks": ["Rapid gentrification displacing long-term residents", "Industrial legacy contamination", "Rent up 28% over 2 years"]
+  },
+  "mission-district-sf": {
+    "mode": "neighborhood",
+    "green_space_ratio": 0.19,
+    "air_quality_pm25": 9.6,
+    "heat_intensity_score": 31,
+    "affordability_trend": "declining",
+    "events": ["Mission Action Plan 2020 adopted", "Community land trust acquisitions", "Cultural district designation"],
+    "risks": ["Tech worker displacement pressure", "Median rent among highest in SF", "Small business closures accelerating"]
+  },
+  "hub-austin-tx": {
+    "mode": "hub",
+    "green_space_ratio": 0.23,
+    "air_quality_pm25": 10.2,
+    "heat_intensity_score": 74,
+    "affordability_trend": "declining",
+    "events": ["Tesla Gigafactory operational", "Apple campus expansion", "Green building ordinance passed"],
+    "risks": ["Explosive growth straining water resources", "Heat island intensifying with urbanization", "Housing costs pricing out workforce"]
+  },
+  "hub-washington-dc": {
+    "mode": "hub",
+    "green_space_ratio": 0.34,
+    "air_quality_pm25": 11.8,
+    "heat_intensity_score": 61,
+    "affordability_trend": "declining",
+    "events": ["DC Clean Energy DC Act targets", "Green infrastructure investment program", "Federal building electrification mandates"],
+    "risks": ["Extreme heat disproportionate in low-income areas", "Federal funding uncertainty", "Displacement in green investment zones"]
   }
 }

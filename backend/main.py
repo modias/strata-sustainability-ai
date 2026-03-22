@@ -4,16 +4,50 @@ import json
 import logging
 import os
 import time
+from pathlib import Path
+from typing import Any, List, Optional
 
 from dotenv import load_dotenv
 
-load_dotenv()
+# Load backend/.env regardless of process cwd (uvicorn started from repo root is common).
+# override=True lets this file fix mistaken GEMINI_MODEL=... in the shell/IDE environment.
+_BACKEND_DIR = Path(__file__).resolve().parent
+_env_file = _BACKEND_DIR / ".env"
+load_dotenv(_env_file, override=True)
+
+_log = logging.getLogger(__name__)
+
+# dotenv does not remove vars missing from .env — a bad GEMINI_MODEL from the shell/IDE persists
+# and causes 400 "unexpected model name format" (e.g. API key pasted as model name).
+_api_key = (os.environ.get("GEMINI_API_KEY") or "").strip()
+_model = (os.environ.get("GEMINI_MODEL") or "").strip()
+if _model:
+    if _model.startswith("AIza") or _model == _api_key:
+        os.environ.pop("GEMINI_MODEL", None)
+        _log.warning(
+            "Removed invalid GEMINI_MODEL from the process environment "
+            "(must be a model id like gemini-2.5-flash, not your API key)."
+        )
+
+if not _api_key:
+    _log.warning(
+        "GEMINI_API_KEY not set after loading %s — check your .env path and restart the server.",
+        _env_file,
+    )
+
+# Clear cached model list if gemini_client was loaded earlier (uvicorn reload edge case)
+try:
+    import services.gemini_client as _gemini_client
+
+    _gemini_client._discovered_models_cache = None
+except Exception:
+    pass
 
 import redis as redis_lib
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sse_starlette.sse import EventSourceResponse
 
 from agents.environmental import run as run_environmental
@@ -143,6 +177,19 @@ class AnalyzeRequest(BaseModel):
 
 NEIGHBORHOOD_ENTITY_IDS = frozenset({"anacostia", "phoenix_south", "detroit_midtown"})
 
+# Stable order for judge / persistence when agents complete in arbitrary order
+_AGENT_RESULT_ORDER = {"Environmental": 0, "Social": 1, "Risk": 2, "Momentum": 3}
+
+
+def _sort_agent_results_for_judge(results: list) -> list:
+    def sort_key(r: dict) -> int:
+        if not isinstance(r, dict):
+            return 99
+        name = str(r.get("name") or "")
+        return _AGENT_RESULT_ORDER.get(name, 99)
+
+    return sorted(results, key=sort_key)
+
 
 @app.post("/analyze")
 def analyze(req: AnalyzeRequest):
@@ -172,6 +219,42 @@ def analyze(req: AnalyzeRequest):
     return {"found": True, "entity_id": entity_id, "data": data}
 
 
+class AskRequest(BaseModel):
+    question: str = ""
+    entity: Optional[str] = None
+    verdict: Optional[str] = None
+    agents: List[Any] = Field(default_factory=list)
+    context: Optional[str] = None
+
+
+_ASK_SYSTEM = """You are STRATA's committee. Answer the user's follow-up question using the STRATA verdict, agent perspectives, and context. Be concise and actionable. JSON only with one key: answer (string, plain text, no markdown). Maximum about 120 words."""
+
+
+@app.post("/ask")
+def ask_committee(body: AskRequest):
+    q = (body.question or "").strip()
+    if not q:
+        return {"answer": "Please enter a question."}
+    from services.gemini_client import run_agent
+
+    packet = {
+        "question": q,
+        "entity": body.entity,
+        "verdict": body.verdict,
+        "agents": body.agents,
+        "context": body.context,
+    }
+    out = run_agent(_ASK_SYSTEM, packet)
+    if isinstance(out, dict):
+        ans = out.get("answer")
+        if isinstance(ans, str) and ans.strip():
+            return {"answer": ans.strip()}
+        err = out.get("error")
+        if err:
+            return {"answer": f"Could not generate an answer: {err}"}
+    return {"answer": "No answer available"}
+
+
 @app.get("/analyze/stream")
 async def analyze_stream(target: str, mode: str = "company"):
     async def generator():
@@ -188,26 +271,33 @@ async def analyze_stream(target: str, mode: str = "company"):
                 "data": json.dumps({"message": "Running agents in parallel"}),
             }
 
-            results = await asyncio.gather(
-                run_environmental(evidence),
-                run_social(evidence),
-                run_risk(evidence),
-                run_momentum(evidence),
-                return_exceptions=True,
-            )
+            tasks = [
+                asyncio.create_task(run_environmental(evidence)),
+                asyncio.create_task(run_social(evidence)),
+                asyncio.create_task(run_risk(evidence)),
+                asyncio.create_task(run_momentum(evidence)),
+            ]
 
             clean_results = []
-            for r in results:
-                if isinstance(r, Exception):
-                    clean_results.append(
-                        {"error": str(r), "score": 50, "confidence": 0.5}
-                    )
-                else:
-                    clean_results.append(r)
-                yield {
-                    "event": "agent_result",
-                    "data": json.dumps(clean_results[-1]),
-                }
+            for coro in asyncio.as_completed(tasks):
+                try:
+                    result = await coro
+                    clean_results.append(result)
+                except Exception as e:
+                    result = {
+                        "error": str(e),
+                        "score": 50,
+                        "confidence": 0.5,
+                        "stance": "neutral",
+                        "claim": "Analysis unavailable",
+                        "positives": [],
+                        "risks": [],
+                    }
+                    clean_results.append(result)
+                yield {"event": "agent_result", "data": json.dumps(result)}
+                await asyncio.sleep(0.1)
+
+            clean_results = _sort_agent_results_for_judge(clean_results)
 
             judge_out = await run_judge(clean_results, evidence)
             yield {"event": "verdict", "data": json.dumps(judge_out)}

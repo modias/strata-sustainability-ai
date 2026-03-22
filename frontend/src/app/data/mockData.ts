@@ -10,6 +10,10 @@ export interface Entity {
   mode: Mode;
   location?: { lat: number; lng: number };
   address?: string;
+  /** CV / demo pipeline metrics (0–1 for green coverage) */
+  greenSpaceRatio?: number;
+  heatIntensityScore?: number;
+  airQualityPm25?: number;
 }
 
 export interface AgentOutput {
@@ -57,6 +61,9 @@ export const ENTITIES: Entity[] = [
     mode: "neighborhood",
     location: { lat: 38.863, lng: -76.9823 },
     address: "1901 Mississippi Ave SE, Washington, DC 20020",
+    greenSpaceRatio: 0.18,
+    heatIntensityScore: 72,
+    airQualityPm25: 12.4,
   },
   {
     id: "greenpoint-brooklyn",
@@ -64,16 +71,25 @@ export const ENTITIES: Entity[] = [
     mode: "neighborhood",
     location: { lat: 40.7297, lng: -73.9504 },
     address: "250 McGuinness Blvd, Brooklyn, NY 11222",
+    greenSpaceRatio: 0.21,
+    heatIntensityScore: 54,
+    airQualityPm25: 13.1,
   },
   {
     id: "patagonia",
     name: "Patagonia Inc.",
     mode: "corporate",
+    greenSpaceRatio: 0.24,
+    heatIntensityScore: 42,
+    airQualityPm25: 8.5,
   },
   {
     id: "tesla",
     name: "Tesla Inc.",
     mode: "corporate",
+    greenSpaceRatio: 0.18,
+    heatIntensityScore: 71,
+    airQualityPm25: 14.2,
   },
   {
     id: "east-austin",
@@ -81,11 +97,17 @@ export const ENTITIES: Entity[] = [
     mode: "neighborhood",
     location: { lat: 30.2672, lng: -97.7179 },
     address: "1100 E 11th St, Austin, TX 78702",
+    greenSpaceRatio: 0.12,
+    heatIntensityScore: 88,
+    airQualityPm25: 11.5,
   },
   {
     id: "amazon",
     name: "Amazon.com Inc.",
     mode: "corporate",
+    greenSpaceRatio: 0.22,
+    heatIntensityScore: 58,
+    airQualityPm25: 9.8,
   },
   {
     id: "mission-district-sf",
@@ -93,31 +115,49 @@ export const ENTITIES: Entity[] = [
     mode: "neighborhood",
     location: { lat: 37.7599, lng: -122.4148 },
     address: "2800 Mission St, San Francisco, CA 94110",
+    greenSpaceRatio: 0.19,
+    heatIntensityScore: 31,
+    airQualityPm25: 9.6,
   },
   {
     id: "unilever",
     name: "Unilever PLC",
     mode: "corporate",
+    greenSpaceRatio: 0.2,
+    heatIntensityScore: 52,
+    airQualityPm25: 10.5,
   },
   {
     id: "apple",
     name: "Apple Inc.",
     mode: "corporate",
+    greenSpaceRatio: 0.31,
+    heatIntensityScore: 38,
+    airQualityPm25: 7.4,
   },
   {
     id: "google",
     name: "Google LLC",
     mode: "corporate",
+    greenSpaceRatio: 0.28,
+    heatIntensityScore: 41,
+    airQualityPm25: 8.8,
   },
   {
     id: "nvidia",
     name: "Nvidia Corporation",
     mode: "corporate",
+    greenSpaceRatio: 0.18,
+    heatIntensityScore: 62,
+    airQualityPm25: 11.2,
   },
   {
     id: "samsung",
     name: "Samsung Electronics Co., Ltd.",
     mode: "corporate",
+    greenSpaceRatio: 0.15,
+    heatIntensityScore: 71,
+    airQualityPm25: 18.4,
   },
   {
     id: "hub-austin-tx",
@@ -125,6 +165,9 @@ export const ENTITIES: Entity[] = [
     mode: "neighborhood",
     location: { lat: 30.2672, lng: -97.7431 },
     address: "Austin, TX metro area",
+    greenSpaceRatio: 0.23,
+    heatIntensityScore: 74,
+    airQualityPm25: 10.2,
   },
   {
     id: "hub-boston-ma",
@@ -132,6 +175,9 @@ export const ENTITIES: Entity[] = [
     mode: "neighborhood",
     location: { lat: 42.3601, lng: -71.0589 },
     address: "Boston, MA metro area",
+    greenSpaceRatio: 0.28,
+    heatIntensityScore: 48,
+    airQualityPm25: 9.5,
   },
   {
     id: "hub-nyc-ny",
@@ -139,6 +185,9 @@ export const ENTITIES: Entity[] = [
     mode: "neighborhood",
     location: { lat: 40.7128, lng: -74.006 },
     address: "New York City, NY metro area",
+    greenSpaceRatio: 0.16,
+    heatIntensityScore: 52,
+    airQualityPm25: 15.0,
   },
   {
     id: "hub-sf-bay-ca",
@@ -146,6 +195,9 @@ export const ENTITIES: Entity[] = [
     mode: "neighborhood",
     location: { lat: 37.7749, lng: -122.4194 },
     address: "San Francisco Bay Area, CA",
+    greenSpaceRatio: 0.22,
+    heatIntensityScore: 46,
+    airQualityPm25: 11.5,
   },
   {
     id: "hub-seattle-wa",
@@ -153,6 +205,9 @@ export const ENTITIES: Entity[] = [
     mode: "neighborhood",
     location: { lat: 47.6062, lng: -122.3321 },
     address: "Seattle, WA metro area",
+    greenSpaceRatio: 0.3,
+    heatIntensityScore: 50,
+    airQualityPm25: 8.5,
   },
   {
     id: "hub-washington-dc",
@@ -160,6 +215,9 @@ export const ENTITIES: Entity[] = [
     mode: "neighborhood",
     location: { lat: 38.9072, lng: -77.0369 },
     address: "Washington, DC metro area",
+    greenSpaceRatio: 0.34,
+    heatIntensityScore: 61,
+    airQualityPm25: 11.8,
   },
   {
     id: "phoenix-south",
@@ -167,6 +225,9 @@ export const ENTITIES: Entity[] = [
     mode: "neighborhood",
     location: { lat: 33.3528, lng: -112.074 },
     address: "Phoenix, AZ",
+    greenSpaceRatio: 0.06,
+    heatIntensityScore: 89,
+    airQualityPm25: 18.8,
   },
   {
     id: "detroit-midtown",
@@ -174,6 +235,9 @@ export const ENTITIES: Entity[] = [
     mode: "neighborhood",
     location: { lat: 42.3462, lng: -83.0648 },
     address: "Detroit, MI",
+    greenSpaceRatio: 0.32,
+    heatIntensityScore: 38,
+    airQualityPm25: 9.2,
   },
 ];
 

@@ -4,15 +4,17 @@ import { Badge } from "./ui/badge";
 import { Progress } from "./ui/progress";
 import { AgentOutput } from "../data/mockData";
 import { Brain, Loader2 } from "lucide-react";
+import { cn } from "./ui/utils";
 
 interface AgentCardProps {
   agent: AgentOutput;
   isStreaming: boolean;
   streamedText?: string;
   isComplete: boolean;
+  className?: string;
 }
 
-export function AgentCard({ agent, isStreaming, streamedText, isComplete }: AgentCardProps) {
+export function AgentCard({ agent, isStreaming, streamedText, isComplete, className }: AgentCardProps) {
   const getScoreColor = (score: number) => {
     if (score >= 75) return "text-emerald-400";
     if (score >= 50) return "text-amber-400";
@@ -28,6 +30,7 @@ export function AgentCard({ agent, isStreaming, streamedText, isComplete }: Agen
   if (isStreaming && streamedText) {
     return (
       <motion.div
+        className={cn("rounded-lg", className)}
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.3 }}
@@ -55,6 +58,7 @@ export function AgentCard({ agent, isStreaming, streamedText, isComplete }: Agen
 
   return (
     <motion.div
+      className={cn("rounded-lg", className)}
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.3 }}

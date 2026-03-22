@@ -7,9 +7,10 @@ import { MapPin } from "lucide-react";
 interface MapViewProps {
   location: { lat: number; lng: number };
   name: string;
+  greenScore?: number;
 }
 
-export function MapView({ location, name }: MapViewProps) {
+export function MapView({ location, name, greenScore }: MapViewProps) {
   const mapRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<L.Map | null>(null);
 
@@ -64,7 +65,17 @@ export function MapView({ location, name }: MapViewProps) {
         <p className="text-sm text-slate-400 mt-1">Satellite imagery from ESRI World Imagery</p>
       </CardHeader>
       <CardContent>
-        <div ref={mapRef} className="h-[400px] rounded-lg overflow-hidden border border-slate-700" />
+        <div className="relative">
+          <div ref={mapRef} className="h-[400px] rounded-lg overflow-hidden border border-slate-700" />
+          {greenScore !== undefined && (
+            <div className="absolute top-3 right-3 z-[1000] bg-black/80 border border-green-400/40 rounded-lg px-3 py-2 backdrop-blur-sm">
+              <div className="text-xs text-muted-foreground mb-1 font-mono uppercase tracking-widest">
+                Green Coverage
+              </div>
+              <div className="text-2xl font-bold text-green-400">{(greenScore * 100).toFixed(0)}%</div>
+            </div>
+          )}
+        </div>
       </CardContent>
     </Card>
   );
