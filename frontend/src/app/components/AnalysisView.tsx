@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useParams, useNavigate } from "react-router";
 import { ArrowLeft, Download, MapPin, Building2, AlertTriangle } from "lucide-react";
 import { Button } from "./ui/button";
@@ -39,14 +39,19 @@ const STREAM_DEMO_TARGET: Record<string, string> = {
 function geminiAgentToAgentOutput(raw: Record<string, unknown>, index: number): AgentOutput {
   const positives = Array.isArray(raw.positives) ? raw.positives.map(String) : [];
   const risks = Array.isArray(raw.risks) ? raw.risks.map(String) : [];
-  const keyFindings = [...positives, ...risks.map((r) => `Risk: ${r}`)];
+  const err = raw.error != null ? String(raw.error) : "";
+  const keyFindings = [
+    ...(err ? [`Error: ${err}`] : []),
+    ...positives,
+    ...risks.map((r) => `Risk: ${r}`),
+  ];
   const claim = String(raw.claim ?? "");
   return {
     agentName: String(raw.name ?? `Agent ${index + 1}`),
     score: Number(raw.score ?? 50),
     confidence: Number(raw.confidence ?? 0.5),
     keyFindings: keyFindings.length ? keyFindings : [claim || "—"],
-    dataSource: String(raw.dataSource ?? "Gemini 2.5 Flash"),
+    dataSource: String(raw.dataSource ?? "Google Gemini"),
     reasoning: String(raw.reasoning ?? claim),
   };
 }
@@ -63,6 +68,26 @@ function judgeToUpdates(judge: Record<string, unknown>) {
 }
 
 const EXPECTED_AGENT_STREAM_COUNT = 4;
+
+type SavePointData = {
+  result?: AnalysisResult;
+  agents?: AgentOutput[];
+};
+
+type SavePointStored = {
+  phase: string;
+  data: SavePointData;
+  savedAt: number;
+};
+
+function restorePoint(entityId: string): SavePointStored | null {
+  try {
+    const raw = localStorage.getItem(`strata:savepoint:${entityId}`);
+    return raw ? (JSON.parse(raw) as SavePointStored) : null;
+  } catch {
+    return null;
+  }
+}
 
 type AnalysisPhase = "idle" | "streaming" | "complete";
 
@@ -187,8 +212,8 @@ function mapAnalyzeResponseToResult(
 
   let radarData = normalizeRadar(judge.radar_data ?? judge.radarData);
   if (!radarData.length && agents.length) {
-    radarData = agents.map((a) => ({
-      dimension: a.agentName,
+    radarData = agents.map((a, index) => ({
+      dimension: `${index + 1}. ${a.agentName}`,
       score: a.score,
       fullMark: 100 as const,
     }));
@@ -242,8 +267,8 @@ function mergeJudgeIntoResult(prev: AnalysisResult, judge: Record<string, unknow
   const support = String(u.topSupportReason);
   const dissent = String(u.topDissentReason);
   const rationale = String(u.rationale);
-  const radarData = prev.agents.map((a) => ({
-    dimension: a.agentName,
+  const radarData = prev.agents.map((a, index) => ({
+    dimension: `${index + 1}. ${a.agentName}`,
     score: a.score,
     fullMark: 100 as const,
   }));
@@ -255,7 +280,7 @@ function mergeJudgeIntoResult(prev: AnalysisResult, judge: Record<string, unknow
     devilsAdvocate: {
       targetAgent: prev.agents[0]?.agentName ?? "",
       challenge: support && dissent ? `${support} · ${dissent}` : rationale,
-      counterDataSource: "Gemini 2.5 Flash",
+      counterDataSource: "Google Gemini",
       specificDataPoint: rationale,
     },
     radarData,
@@ -283,6 +308,18 @@ export function AnalysisView() {
   const [historyKey, setHistoryKey] = useState(0);
 
   const snowflakeHistoryEntityId = entityId ? SNOWFLAKE_ENTITY_ID[entityId] ?? entityId : "";
+
+  const savePoint = useCallback((phase: string, data: SavePointData) => {
+    if (!entityId) return;
+    try {
+      localStorage.setItem(
+        `strata:savepoint:${entityId}`,
+        JSON.stringify({ phase, data, savedAt: Date.now() })
+      );
+    } catch (e) {
+      console.warn("SavePoint failed", e);
+    }
+  }, [entityId]);
 
   useEffect(() => {
     if (!entityId) {
@@ -349,6 +386,27 @@ export function AnalysisView() {
   useEffect(() => {
     if (!entityId || loading || !result) return;
 
+    const saved = restorePoint(entityId);
+    if (
+      saved &&
+      Date.now() - saved.savedAt < 3600000 &&
+      saved.phase === "complete" &&
+      saved.data?.result
+    ) {
+      setResult(saved.data.result);
+      const savedAgents = saved.data.agents;
+      const fromResult = saved.data.result.agents ?? [];
+      setAgentOutputs(
+        Array.isArray(savedAgents) && savedAgents.length > 0 ? savedAgents : fromResult
+      );
+      setPhase("complete");
+      setShowVerdict(true);
+      setShowDevilsAdvocate(true);
+      setUsedMockFallback(false);
+      setProgress(100);
+      return;
+    }
+
     const initialResult = result;
 
     setPhase("idle");
@@ -407,6 +465,7 @@ export function AnalysisView() {
       await new Promise((resolve) => setTimeout(resolve, 800));
       setShowVerdict(true);
       setPhase("complete");
+      savePoint("complete", { result: r, agents: r.agents });
     };
 
     const applyMockFallback = () => {
@@ -455,6 +514,7 @@ export function AnalysisView() {
           clearTimeout(fallbackTimer);
           fallbackTimer = null;
         }
+        savePoint("agents_start", { result: { ...initialResult, agents: [] } });
       });
 
       es.addEventListener("agent_result", (e) => {
@@ -462,14 +522,13 @@ export function AnalysisView() {
         const raw = JSON.parse(ev.data) as Record<string, unknown>;
         const agent = geminiAgentToAgentOutput(raw, agentCount);
         agentCount++;
-        setResult((prev) =>
-          prev
-            ? {
-                ...prev,
-                agents: [...(prev.agents ?? []), agent],
-              }
-            : null
-        );
+        setResult((prev) => {
+          if (!prev) return null;
+          const nextAgents = [...(prev.agents ?? []), agent];
+          const nextResult = { ...prev, agents: nextAgents };
+          savePoint("streaming", { result: nextResult, agents: nextAgents });
+          return nextResult;
+        });
         setAgentOutputs((prev) => [...prev, agent]);
         setProgress((agentCount / EXPECTED_AGENT_STREAM_COUNT) * 100);
       });
@@ -477,7 +536,12 @@ export function AnalysisView() {
       es.addEventListener("verdict", (e) => {
         const ev = e as MessageEvent;
         const judge = JSON.parse(ev.data) as Record<string, unknown>;
-        setResult((prev) => (prev ? mergeJudgeIntoResult(prev, judge) : null));
+        setResult((prev) => {
+          if (!prev) return null;
+          const merged = mergeJudgeIntoResult(prev, judge);
+          savePoint("verdict", { result: merged, agents: merged.agents });
+          return merged;
+        });
         setShowDevilsAdvocate(true);
       });
 
@@ -491,6 +555,12 @@ export function AnalysisView() {
         setShowVerdict(true);
         setPhase("complete");
         setHistoryKey((k) => k + 1);
+        setResult((prev) => {
+          if (prev) {
+            savePoint("complete", { result: prev, agents: prev.agents });
+          }
+          return prev;
+        });
       });
 
       es.addEventListener("error", () => {
@@ -508,7 +578,7 @@ export function AnalysisView() {
       if (fallbackTimer) clearTimeout(fallbackTimer);
       es?.close();
     };
-  }, [entityId, loading, mode, snowflakeHistoryEntityId]);
+  }, [entityId, loading, mode, snowflakeHistoryEntityId, savePoint]);
 
   const handleExportVerdict = async () => {
     if (!verdictCardRef.current) return;
@@ -556,6 +626,12 @@ export function AnalysisView() {
     );
   }
 
+  const handleBack = () => {
+    if (entityId) localStorage.removeItem(`strata:savepoint:${entityId}`);
+    if (window.history.length > 1) navigate(-1);
+    else navigate("/");
+  };
+
   return (
     <div className="min-h-screen">
       <header className="border-b border-slate-800 bg-slate-950/50 backdrop-blur-sm sticky top-0 z-50">
@@ -565,7 +641,7 @@ export function AnalysisView() {
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() => navigate("/")}
+                onClick={handleBack}
                 className="text-slate-400 hover:text-white"
               >
                 <ArrowLeft className="h-4 w-4 mr-2" />
@@ -591,6 +667,18 @@ export function AnalysisView() {
                   {error ? "Live API unavailable — showing cached demo data" : "Demo data (no Snowflake row)"}
                 </Badge>
               )}
+              {phase === "complete" && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (entityId) localStorage.removeItem(`strata:savepoint:${entityId}`);
+                    window.location.reload();
+                  }}
+                  className="text-xs text-slate-400 hover:text-white border border-slate-600 rounded px-3 py-1 transition-colors"
+                >
+                  ↺ Rerun Analysis
+                </button>
+              )}
               {showVerdict && (
                 <Button
                   onClick={handleExportVerdict}
@@ -608,7 +696,7 @@ export function AnalysisView() {
       </header>
 
       <div className="container mx-auto px-4 py-8">
-        {mode === "neighborhood" && result.entity.location && (
+        {(mode === "neighborhood" || mode === "hub") && result.entity.location && (
           <div className="mb-8">
             <MapView location={result.entity.location} name={result.entity.name} />
           </div>
@@ -646,7 +734,9 @@ export function AnalysisView() {
                 agent={agent}
                 isStreaming={streamingAgentIndex === index}
                 streamedText={streamedText[index]}
-                isComplete={index < agentOutputs.length}
+                isComplete={
+                  phase === "complete" ? index < result.agents.length : index < agentOutputs.length
+                }
               />
             ))}
           </div>

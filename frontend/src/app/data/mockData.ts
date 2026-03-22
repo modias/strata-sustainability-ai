@@ -55,7 +55,7 @@ export const ENTITIES: Entity[] = [
     id: "anacostia-dc",
     name: "Anacostia, Washington DC",
     mode: "neighborhood",
-    location: { lat: 38.8628, lng: -76.9956 },
+    location: { lat: 38.863, lng: -76.9823 },
     address: "1901 Mississippi Ave SE, Washington, DC 20020",
   },
   {
@@ -160,6 +160,20 @@ export const ENTITIES: Entity[] = [
     mode: "neighborhood",
     location: { lat: 38.9072, lng: -77.0369 },
     address: "Washington, DC metro area",
+  },
+  {
+    id: "phoenix-south",
+    name: "Phoenix South",
+    mode: "neighborhood",
+    location: { lat: 33.3528, lng: -112.074 },
+    address: "Phoenix, AZ",
+  },
+  {
+    id: "detroit-midtown",
+    name: "Detroit Midtown",
+    mode: "neighborhood",
+    location: { lat: 42.3462, lng: -83.0648 },
+    address: "Detroit, MI",
   },
 ];
 

@@ -1,12 +1,17 @@
 import asyncio
+import hashlib
 import json
 import logging
+import os
+import time
 
 from dotenv import load_dotenv
 
 load_dotenv()
 
-from fastapi import FastAPI
+import redis as redis_lib
+
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from sse_starlette.sse import EventSourceResponse
@@ -26,8 +31,23 @@ from services.snowflake_client import (
 
 logger = logging.getLogger(__name__)
 
+try:
+    _state_redis = redis_lib.Redis(
+        host=os.environ.get("REDIS_HOST", "localhost"),
+        port=int(os.environ.get("REDIS_PORT", 6379)),
+        db=1,
+        decode_responses=True,
+        socket_connect_timeout=2,
+    )
+    _state_redis.ping()
+except Exception:
+    _state_redis = None
+
 app = FastAPI(title="STRATA API")
 
+# Dev-friendly CORS: any localhost port (Vite may shift ports) and mirror all requested
+# headers on preflight. SSE/EventSource can trigger OPTIONS with headers like
+# Last-Event-ID; a narrow allow_headers list caused 400 and forced the UI to mock data.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -38,9 +58,10 @@ app.add_middleware(
         "http://127.0.0.1:3000",
         "http://localhost:3000",
     ],
+    allow_origin_regex=r"https?://(localhost|127\.0\.0\.1)(:\d+)?$",
     allow_credentials=True,
-    allow_methods=["GET", "POST", "OPTIONS"],
-    allow_headers=["Content-Type", "Authorization"],
+    allow_methods=["GET", "POST", "OPTIONS", "HEAD"],
+    allow_headers=["*"],
 )
 
 ENTITY_CV_PROFILES = {
@@ -98,6 +119,16 @@ def preload_cv_into_snowflake():
 @app.get("/health")
 def health():
     return {"status": "ok"}
+
+
+@app.get("/state/{target}")
+async def get_state(target: str):
+    if _state_redis is None:
+        raise HTTPException(503, "State store unavailable")
+    raw = _state_redis.get(f"strata:state:{target.lower()}")
+    if not raw:
+        raise HTTPException(404, "No saved state for this entity")
+    return json.loads(raw)
 
 
 @app.get("/history")
@@ -180,6 +211,23 @@ async def analyze_stream(target: str, mode: str = "company"):
 
             judge_out = await run_judge(clean_results, evidence)
             yield {"event": "verdict", "data": json.dumps(judge_out)}
+
+            if _state_redis is not None:
+                try:
+                    state = {
+                        "target": target,
+                        "mode": mode,
+                        "agents": clean_results,
+                        "verdict": judge_out,
+                        "saved_at": time.time(),
+                    }
+                    _state_redis.setex(
+                        f"strata:state:{target.lower()}",
+                        86400,
+                        json.dumps(state),
+                    )
+                except Exception as e:
+                    logger.warning("State save failed: %s", e)
 
             result = save_verdict(
                 target=target,
