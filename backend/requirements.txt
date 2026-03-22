@@ -1,0 +1,11 @@
+fastapi
+uvicorn[standard]
+snowflake-connector-python
+google-generativeai
+redis[asyncio]
+sse-starlette
+python-dotenv
+httpx
+opencv-python-headless
+numpy
+Pillow
