@@ -1,0 +1,59 @@
+{
+  "tesla": {
+    "mode": "company",
+    "green_space_ratio": 0.18,
+    "air_quality_pm25": 14.2,
+    "heat_intensity_score": 71,
+    "energy_mix_signal": "mixed",
+    "affordability_trend": "stable",
+    "events": ["gigafactory expansion in Nevada", "solar roof initiative launch"],
+    "risks": ["water usage concerns at Gigafactory", "supply chain emissions from battery materials"]
+  },
+  "amazon": {
+    "mode": "company",
+    "green_space_ratio": 0.22,
+    "air_quality_pm25": 9.8,
+    "heat_intensity_score": 58,
+    "energy_mix_signal": "improving",
+    "affordability_trend": "stable",
+    "events": ["Climate Pledge net-zero by 2040", "AWS 100% renewable energy commitment"],
+    "risks": ["absolute emissions growing with scale", "geographic mismatch of clean power to load"]
+  },
+  "microsoft": {
+    "mode": "company",
+    "green_space_ratio": 0.24,
+    "air_quality_pm25": 8.1,
+    "heat_intensity_score": 45,
+    "energy_mix_signal": "positive",
+    "affordability_trend": "stable",
+    "events": ["carbon negative pledge by 2030", "renewable data centers expansion"],
+    "risks": ["Scope 3 supply chain emissions", "AI compute energy demand increasing"]
+  },
+  "anacostia": {
+    "mode": "neighborhood",
+    "green_space_ratio": 0.18,
+    "air_quality_pm25": 12.4,
+    "heat_intensity_score": 72,
+    "affordability_trend": "declining",
+    "events": ["DC green corridor investment announced", "new mixed-use permits filed"],
+    "risks": ["34% rent increase over 18 months", "displacement pressure on existing residents"]
+  },
+  "phoenix_south": {
+    "mode": "neighborhood",
+    "green_space_ratio": 0.06,
+    "air_quality_pm25": 18.8,
+    "heat_intensity_score": 89,
+    "affordability_trend": "stable",
+    "events": ["city shade structure budget approved", "solar adoption program launched"],
+    "risks": ["extreme heat 43C+ for 28 days annually", "no shade on primary arterials"]
+  },
+  "detroit_midtown": {
+    "mode": "neighborhood",
+    "green_space_ratio": 0.32,
+    "air_quality_pm25": 9.2,
+    "heat_intensity_score": 38,
+    "affordability_trend": "moderate",
+    "events": ["Midtown Detroit Inc investment zone active", "bike lane installation ongoing"],
+    "risks": ["18% rent increase over 18 months", "affordable unit ratio depends on incentive policy"]
+  }
+}

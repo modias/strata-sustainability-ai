@@ -1,3 +1,5 @@
+import asyncio
+import json
 import logging
 
 from dotenv import load_dotenv
@@ -7,7 +9,14 @@ load_dotenv()
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+from sse_starlette.sse import EventSourceResponse
 
+from agents.environmental import run as run_environmental
+from agents.judge import run as run_judge
+from agents.momentum import run as run_momentum
+from agents.risk import run as run_risk
+from agents.social import run as run_social
+from services.evidence_builder import build_evidence_packet
 from services.snowflake_client import (
     get_latest_analysis,
     get_verdict_history,
@@ -130,3 +139,65 @@ def analyze(req: AnalyzeRequest):
     if data is None:
         return {"found": False, "entity_id": entity_id, "data": None}
     return {"found": True, "entity_id": entity_id, "data": data}
+
+
+@app.get("/analyze/stream")
+async def analyze_stream(target: str, mode: str = "company"):
+    async def generator():
+        try:
+            yield {
+                "event": "round_start",
+                "data": json.dumps({"message": "Building evidence packet"}),
+            }
+
+            evidence = build_evidence_packet(target.lower(), mode)
+
+            yield {
+                "event": "agents_start",
+                "data": json.dumps({"message": "Running agents in parallel"}),
+            }
+
+            results = await asyncio.gather(
+                run_environmental(evidence),
+                run_social(evidence),
+                run_risk(evidence),
+                run_momentum(evidence),
+                return_exceptions=True,
+            )
+
+            clean_results = []
+            for r in results:
+                if isinstance(r, Exception):
+                    clean_results.append(
+                        {"error": str(r), "score": 50, "confidence": 0.5}
+                    )
+                else:
+                    clean_results.append(r)
+                yield {
+                    "event": "agent_result",
+                    "data": json.dumps(clean_results[-1]),
+                }
+
+            judge_out = await run_judge(clean_results, evidence)
+            yield {"event": "verdict", "data": json.dumps(judge_out)}
+
+            result = save_verdict(
+                target=target,
+                mode=mode,
+                final_score=judge_out.get("final_score", 0) / 100,
+                verdict=judge_out.get("verdict", "UNKNOWN"),
+                trajectory=judge_out.get("trajectory", "flat"),
+                agent_scores=clean_results,
+                judge_output=judge_out,
+                entity_id=target.lower(),
+            )
+
+            yield {
+                "event": "complete",
+                "data": json.dumps({"saved": result is not None}),
+            }
+
+        except Exception as e:
+            yield {"event": "error", "data": json.dumps({"message": str(e)})}
+
+    return EventSourceResponse(generator())

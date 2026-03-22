@@ -27,6 +27,43 @@ import { VerdictHistory } from "./VerdictHistory";
 import { API_BASE } from "../lib/apiBase";
 import html2canvas from "html2canvas";
 
+const STREAM_DEMO_TARGET: Record<string, string> = {
+  "anacostia-dc": "anacostia",
+  "phoenix-south": "phoenix_south",
+  "detroit-midtown": "detroit_midtown",
+  tesla: "tesla",
+  amazon: "amazon",
+  microsoft: "microsoft",
+};
+
+function geminiAgentToAgentOutput(raw: Record<string, unknown>, index: number): AgentOutput {
+  const positives = Array.isArray(raw.positives) ? raw.positives.map(String) : [];
+  const risks = Array.isArray(raw.risks) ? raw.risks.map(String) : [];
+  const keyFindings = [...positives, ...risks.map((r) => `Risk: ${r}`)];
+  const claim = String(raw.claim ?? "");
+  return {
+    agentName: String(raw.name ?? `Agent ${index + 1}`),
+    score: Number(raw.score ?? 50),
+    confidence: Number(raw.confidence ?? 0.5),
+    keyFindings: keyFindings.length ? keyFindings : [claim || "—"],
+    dataSource: String(raw.dataSource ?? "Gemini 2.5 Flash"),
+    reasoning: String(raw.reasoning ?? claim),
+  };
+}
+
+function judgeToUpdates(judge: Record<string, unknown>) {
+  return {
+    verdict: judge.verdict ?? "CONTESTED",
+    finalScore: judge.final_score ?? 50,
+    trajectory: judge.trajectory ?? "flat",
+    rationale: judge.rationale ?? "",
+    topSupportReason: judge.top_support_reason ?? "",
+    topDissentReason: judge.top_dissent_reason ?? "",
+  };
+}
+
+const EXPECTED_AGENT_STREAM_COUNT = 4;
+
 type AnalysisPhase = "idle" | "streaming" | "complete";
 
 type AnalyzeApiData = {
@@ -195,6 +232,37 @@ function mapAnalyzeResponseToResult(
   };
 }
 
+function mergeJudgeIntoResult(prev: AnalysisResult, judge: Record<string, unknown>): AnalysisResult {
+  const u = judgeToUpdates(judge);
+  const verdictStr = String(u.verdict);
+  const verdict: Verdict = isVerdict(verdictStr) ? verdictStr : "CONTESTED";
+  const finalScore = Number(u.finalScore);
+  const dissentScore = Math.min(1, Math.max(0, 1 - finalScore / 100));
+  const dissentLevel = dissentLevelFromScore(dissentScore);
+  const support = String(u.topSupportReason);
+  const dissent = String(u.topDissentReason);
+  const rationale = String(u.rationale);
+  const radarData = prev.agents.map((a) => ({
+    dimension: a.agentName,
+    score: a.score,
+    fullMark: 100 as const,
+  }));
+  return {
+    ...prev,
+    verdict,
+    dissentLevel,
+    dissentScore,
+    devilsAdvocate: {
+      targetAgent: prev.agents[0]?.agentName ?? "",
+      challenge: support && dissent ? `${support} · ${dissent}` : rationale,
+      counterDataSource: "Gemini 2.5 Flash",
+      specificDataPoint: rationale,
+    },
+    radarData,
+    suggestedQuestions: [support, dissent].filter(Boolean),
+  };
+}
+
 export function AnalysisView() {
   const { mode, entityId } = useParams<{ mode: string; entityId: string }>();
   const navigate = useNavigate();
@@ -279,7 +347,9 @@ export function AnalysisView() {
   }, [entityId]);
 
   useEffect(() => {
-    if (!result) return;
+    if (!entityId || loading || !result) return;
+
+    const initialResult = result;
 
     setPhase("idle");
     setProgress(0);
@@ -289,57 +359,156 @@ export function AnalysisView() {
     setShowDevilsAdvocate(false);
     setShowVerdict(false);
 
+    let cancelled = false;
+    let es: EventSource | null = null;
+    let fallbackTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const runMockStreaming = async (r: AnalysisResult) => {
+      for (let i = 0; i < r.agents.length; i++) {
+        if (cancelled) return;
+        setStreamingAgentIndex(i);
+        setProgress(((i + 1) / r.agents.length) * 100);
+
+        const agent = r.agents[i];
+        const chunks = generateAgentStream(agent);
+
+        for (let j = 0; j < chunks.length; j++) {
+          await new Promise((resolve) => setTimeout(resolve, 30));
+          setStreamedText((prev) => ({
+            ...prev,
+            [i]: chunks.slice(0, j + 1).join(""),
+          }));
+        }
+
+        await new Promise((resolve) => setTimeout(resolve, 200));
+        setAgentOutputs((prev) => [...prev, agent]);
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      setShowDevilsAdvocate(true);
+
+      try {
+        if (snowflakeHistoryEntityId) {
+          const res = await fetch(`${API_BASE}/analyze`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ entity_id: snowflakeHistoryEntityId }),
+          });
+          if (!res.ok) {
+            console.warn("Analyze POST failed:", res.status);
+          } else {
+            setHistoryKey((k) => k + 1);
+          }
+        }
+      } catch (e) {
+        console.warn("Analyze POST error:", e);
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, 800));
+      setShowVerdict(true);
+      setPhase("complete");
+    };
+
+    const applyMockFallback = () => {
+      if (cancelled) return;
+      if (es) {
+        es.close();
+        es = null;
+      }
+      if (fallbackTimer) {
+        clearTimeout(fallbackTimer);
+        fallbackTimer = null;
+      }
+      setResult(initialResult);
+      setUsedMockFallback(true);
+      void runMockStreaming(initialResult);
+    };
+
     const startTimer = setTimeout(() => {
+      if (cancelled) return;
       setPhase("streaming");
-      void (async () => {
-        const r = result;
-        for (let i = 0; i < r.agents.length; i++) {
-          setStreamingAgentIndex(i);
-          setProgress(((i + 1) / r.agents.length) * 100);
+      setResult((prev) => (prev ? { ...prev, agents: [] } : null));
 
-          const agent = r.agents[i];
-          const chunks = generateAgentStream(agent);
+      let agentCount = 0;
+      const streamTarget = STREAM_DEMO_TARGET[entityId] ?? entityId;
+      const modeParam = mode === "neighborhood" ? "neighborhood" : "company";
 
-          for (let j = 0; j < chunks.length; j++) {
-            await new Promise((resolve) => setTimeout(resolve, 30));
-            setStreamedText((prev) => ({
-              ...prev,
-              [i]: chunks.slice(0, j + 1).join(""),
-            }));
-          }
-
-          await new Promise((resolve) => setTimeout(resolve, 200));
-          setAgentOutputs((prev) => [...prev, agent]);
+      fallbackTimer = setTimeout(() => {
+        if (agentCount === 0) {
+          applyMockFallback();
         }
+      }, 5000);
 
-        await new Promise((resolve) => setTimeout(resolve, 500));
+      es = new EventSource(
+        `${API_BASE}/analyze/stream?target=${encodeURIComponent(streamTarget)}&mode=${encodeURIComponent(modeParam)}`
+      );
+
+      es.addEventListener("round_start", () => {
+        if (fallbackTimer) {
+          clearTimeout(fallbackTimer);
+          fallbackTimer = null;
+        }
+      });
+
+      es.addEventListener("agents_start", () => {
+        if (fallbackTimer) {
+          clearTimeout(fallbackTimer);
+          fallbackTimer = null;
+        }
+      });
+
+      es.addEventListener("agent_result", (e) => {
+        const ev = e as MessageEvent;
+        const raw = JSON.parse(ev.data) as Record<string, unknown>;
+        const agent = geminiAgentToAgentOutput(raw, agentCount);
+        agentCount++;
+        setResult((prev) =>
+          prev
+            ? {
+                ...prev,
+                agents: [...(prev.agents ?? []), agent],
+              }
+            : null
+        );
+        setAgentOutputs((prev) => [...prev, agent]);
+        setProgress((agentCount / EXPECTED_AGENT_STREAM_COUNT) * 100);
+      });
+
+      es.addEventListener("verdict", (e) => {
+        const ev = e as MessageEvent;
+        const judge = JSON.parse(ev.data) as Record<string, unknown>;
+        setResult((prev) => (prev ? mergeJudgeIntoResult(prev, judge) : null));
         setShowDevilsAdvocate(true);
+      });
 
-        try {
-          if (snowflakeHistoryEntityId) {
-            const res = await fetch(`${API_BASE}/analyze`, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ entity_id: snowflakeHistoryEntityId }),
-            });
-            if (!res.ok) {
-              console.warn("Analyze POST failed:", res.status);
-            } else {
-              setHistoryKey((k) => k + 1);
-            }
-          }
-        } catch (e) {
-          console.warn("Analyze POST error:", e);
+      es.addEventListener("complete", () => {
+        if (fallbackTimer) {
+          clearTimeout(fallbackTimer);
+          fallbackTimer = null;
         }
-
-        await new Promise((resolve) => setTimeout(resolve, 800));
+        es?.close();
+        es = null;
         setShowVerdict(true);
         setPhase("complete");
-      })();
+        setHistoryKey((k) => k + 1);
+      });
+
+      es.addEventListener("error", () => {
+        es?.close();
+        es = null;
+        if (agentCount === 0) {
+          applyMockFallback();
+        }
+      });
     }, 500);
 
-    return () => clearTimeout(startTimer);
-  }, [entityId, result]);
+    return () => {
+      cancelled = true;
+      clearTimeout(startTimer);
+      if (fallbackTimer) clearTimeout(fallbackTimer);
+      es?.close();
+    };
+  }, [entityId, loading, mode, snowflakeHistoryEntityId]);
 
   const handleExportVerdict = async () => {
     if (!verdictCardRef.current) return;
@@ -454,7 +623,11 @@ export function AnalysisView() {
               <div className="space-y-2">
                 <div className="flex justify-between text-sm">
                   <span className="text-slate-400">
-                    Perspective {streamingAgentIndex + 1} of {result.agents.length}
+                    Perspective{" "}
+                    {streamingAgentIndex >= 0
+                      ? streamingAgentIndex + 1
+                      : Math.min(result.agents.length + 1, EXPECTED_AGENT_STREAM_COUNT)}{" "}
+                    of {EXPECTED_AGENT_STREAM_COUNT}
                   </span>
                   <span className="text-slate-400">{Math.round(progress)}%</span>
                 </div>
@@ -469,7 +642,7 @@ export function AnalysisView() {
           <div className="grid grid-cols-1 gap-4">
             {result.agents.map((agent, index) => (
               <AgentCard
-                key={agent.agentName}
+                key={`${agent.agentName}-${index}`}
                 agent={agent}
                 isStreaming={streamingAgentIndex === index}
                 streamedText={streamedText[index]}
