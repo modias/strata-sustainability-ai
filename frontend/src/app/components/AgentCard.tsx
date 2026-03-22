@@ -69,7 +69,7 @@ export function AgentCard({ agent, isStreaming, streamedText, isComplete }: Agen
               <div>
                 <CardTitle className="text-white text-lg">{agent.agentName}</CardTitle>
                 <p className="text-sm text-slate-400 mt-1">
-                  Confidence: {(agent.confidence * 100).toFixed(0)}%
+                  How sure: {(agent.confidence * 100).toFixed(0)}%
                 </p>
               </div>
             </div>
@@ -80,10 +80,10 @@ export function AgentCard({ agent, isStreaming, streamedText, isComplete }: Agen
           </div>
         </CardHeader>
         <CardContent className="space-y-4">
-          {/* Confidence Bar */}
+          {/* Certainty bar */}
           <div>
             <div className="flex justify-between text-sm mb-2">
-              <span className="text-slate-400">Confidence Level</span>
+              <span className="text-slate-400">How sure</span>
               <span className="text-emerald-400">{(agent.confidence * 100).toFixed(0)}%</span>
             </div>
             <Progress value={agent.confidence * 100} className="h-2" />

@@ -9,7 +9,7 @@ export function UserPersonas() {
       name: "Maya - ESG Analyst",
       role: "$8B Asset Manager",
       story:
-        "Maya's firm is evaluating Anacostia real estate for their ESG portfolio. Normally she'd spend 3 days building a memo from EPA data and Census reports. With STRATA she types the address, watches the committee run in 45 seconds, and sees CONTESTED with HIGH dissent flagged on displacement risk. She sends the verdict card to her manager with one note: 'Environmental story is solid but equity story is contested—recommend holding off until Q3 rent data.' Three days became 45 seconds. The decision is better, not just faster.",
+        "Maya's firm is evaluating Anacostia real estate for their ESG portfolio. Normally she'd spend 3 days building a memo from EPA data and Census reports. With STRATA she types the address, watches the multi-angle review finish in 45 seconds, and sees CONTESTED with HIGH dissent flagged on displacement risk. She sends the verdict card to her manager with one note: 'Environmental story is solid but equity story is contested—recommend holding off until Q3 rent data.' Three days became 45 seconds. The decision is better, not just faster.",
       color: "from-emerald-500/20 to-teal-600/20",
       borderColor: "border-emerald-500/30",
     },
@@ -18,7 +18,7 @@ export function UserPersonas() {
       name: "James - Director of Sustainability",
       role: "Regional Manufacturer",
       story:
-        "James's CEO announced net-zero by 2040. James has zero capex budget. He runs his company through STRATA corporate mode with no-expansion toggled on. The Operations Agent returns four actions: consolidate supplier deliveries (saves $280k annually, -28% logistics emissions), shift production to off-peak hours (-12% energy cost), switch two packaging suppliers at equivalent cost (Scope 3 reduction), and sign a renewable energy certificate with existing utility (eliminates Scope 2 entirely). Total capex: zero. James implements all four in the next quarter.",
+        "James's CEO announced net-zero by 2040. James has zero capex budget. He uses STRATA in the company view with no-expansion turned on. The operations summary returns four actions: consolidate supplier deliveries (saves $280k annually, -28% logistics emissions), shift production to off-peak hours (-12% energy cost), switch two packaging suppliers at equivalent cost (supply-chain emissions), and sign a renewable energy certificate with the existing utility (eliminates on-site electricity emissions). Total capex: zero. James implements all four in the next quarter.",
       color: "from-blue-500/20 to-indigo-600/20",
       borderColor: "border-blue-500/30",
     },
@@ -27,7 +27,7 @@ export function UserPersonas() {
       name: "Dr. Priya - Urban Planning Director",
       role: "Mid-Size City",
       story:
-        "Priya has $12M to allocate across six neighborhoods for green infrastructure. She runs all six through STRATA in 10 minutes. Two are IMPROVING, two STAGNANT, one DECLINING, one CONTESTED. The DECLINING neighborhood with extreme heat vulnerability gets the largest allocation. The CONTESTED neighborhood gets a community benefit agreement requirement. The IMPROVING neighborhoods get maintenance allocations. Priya defends each decision in city council with AI-debated, data-backed rationale—not a $200k consultant report that took three months.",
+        "Priya has $12M to allocate across six neighborhoods for green infrastructure. She runs all six through STRATA in 10 minutes. Two are IMPROVING, two STAGNANT, one DECLINING, one CONTESTED. The DECLINING neighborhood with extreme heat vulnerability gets the largest allocation. The CONTESTED neighborhood gets a community benefit agreement requirement. The IMPROVING neighborhoods get maintenance allocations. Priya defends each decision in city council with debate-tested, data-backed rationale—not a $200k consultant report that took three months.",
       color: "from-purple-500/20 to-pink-600/20",
       borderColor: "border-purple-500/30",
     },
