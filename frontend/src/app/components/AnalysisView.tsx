@@ -1,17 +1,19 @@
-import { useState, useEffect, useLayoutEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo } from "react";
 import { useParams, useNavigate } from "react-router";
-import { ArrowLeft, Download, MapPin, Building2, AlertTriangle } from "lucide-react";
+import { ArrowLeft, MapPin, Building2, AlertTriangle } from "lucide-react";
 import { Button } from "./ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
-import { Badge } from "./ui/badge";
 import { AgentCard } from "./AgentCard";
 import { VerdictCard } from "./VerdictCard";
-import { RadarChart } from "./RadarChart";
+import { RadarChart, type RadarChartDatum } from "./RadarChart";
+import { AGENT_HEADING_DEVILS_ADVOCATE, headingForRadarDimension } from "../lib/radarAgentHeadings";
+import { buildFiveAgentReview } from "../lib/fiveAgentReview";
 import { DissentMap } from "./DissentMap";
 import { NoExpansionActions } from "./NoExpansionActions";
 import { MapView } from "./MapView";
 import {
   MOCK_RESULTS,
+  resolveMockResultsKey,
   AgentOutput,
   generateAgentStream,
   SNOWFLAKE_ENTITY_ID,
@@ -21,10 +23,9 @@ import {
   type DissentLevel,
   type DevilsAdvocateChallenge,
   type Entity,
+  type AgentMetric,
 } from "../data/mockData";
-import { VerdictHistory } from "./VerdictHistory";
-import { API_BASE } from "../lib/apiBase";
-import html2canvas from "html2canvas";
+import { API_BASE, USE_MOCK_DATA } from "../lib/apiBase";
 
 const STREAM_DEMO_TARGET: Record<string, string> = {
   "anacostia-dc": "anacostia",
@@ -60,37 +61,43 @@ const VERDICT_THEME: Record<Verdict, { text: string; surface: string }> = {
   STAGNANT: { text: "text-slate-400", surface: "bg-slate-400/10 border-slate-400/30" },
 };
 
-const AGENT_NAME_MAP: Record<string, string> = {
-  Environmental: "Environmental Agent",
-  Social: "Social Agent",
-  Risk: "Risk Agent",
-  Momentum: "Momentum Agent",
-};
-
 function geminiAgentToAgentOutput(raw: Record<string, unknown>, index: number): AgentOutput {
-  const rawName = String(raw.name ?? "").trim();
-  const positives = Array.isArray(raw.positives) ? raw.positives.map(String) : [];
-  const risksArr = Array.isArray(raw.risks) ? raw.risks.map(String) : [];
-  const err = raw.error != null ? String(raw.error) : "";
-  const keyFindings = [
-    ...(err ? [`Error: ${err}`] : []),
-    ...positives,
-    ...risksArr.map((r) => `Risk: ${r}`),
-  ];
-  const claim = String(raw.claim ?? "");
-  const gs = raw.grounding_sources ?? raw.groundingSources;
+  const rawName = String(raw?.name ?? raw?.agent ?? raw?.agentName ?? "").trim();
+
+  const nameMap: Record<string, string> = {
+    Environmental: "Environmental Agent",
+    Social: "Social Agent",
+    Risk: "Risk Agent",
+    Momentum: "Momentum Agent",
+    "Devil's Advocate": "Devil's Advocate Agent",
+  };
+
+  const agentName =
+    nameMap[rawName] || (rawName ? rawName : `Agent ${index + 1}`);
+
+  const pos = Array.isArray(raw?.positives) ? raw.positives.map(String) : [];
+  const kfFromKey = Array.isArray(raw?.keyFindings) ? raw.keyFindings.map(String) : [];
+  const keyFindingsCombined = [...pos, ...kfFromKey];
+  const risksArr = Array.isArray(raw?.risks) ? raw.risks.map(String) : [];
+  const keyFindings: string[] =
+    keyFindingsCombined.length > 0 ? keyFindingsCombined : risksArr;
+
+  const gs = raw?.grounding_sources ?? raw?.groundingSources;
   const groundingSources = Array.isArray(gs) ? gs.map(String) : [];
+  const modelUsed = String(raw?.model_used ?? raw?.modelUsed ?? "gemini-2.5-flash");
+  const dataSourceDefault = `${raw?.model_used ?? "Gemini 2.5 Flash"}`;
+
   return {
-    agentName: AGENT_NAME_MAP[rawName] ?? (rawName || `Agent ${index + 1}`),
-    score: Number(raw.score ?? 50),
-    confidence: Number(raw.confidence ?? 0.5),
-    stance: String(raw.stance ?? "neutral"),
-    claim,
-    keyFindings: keyFindings.length ? keyFindings : [claim || "—"],
+    agentName,
+    score: typeof raw?.score === "number" ? raw.score : 50,
+    confidence: typeof raw?.confidence === "number" ? raw.confidence : 0.5,
+    stance: String(raw?.stance ?? "neutral"),
+    claim: String(raw?.claim ?? raw?.summary ?? ""),
+    keyFindings,
     risks: risksArr,
-    dataSource: String(raw.dataSource ?? "Gemini 2.5 Flash"),
-    reasoning: String(raw.reasoning ?? raw.claim ?? ""),
-    modelUsed: String(raw.model_used ?? raw.modelUsed ?? "gemini-2.5-flash"),
+    dataSource: String(raw?.dataSource ?? dataSourceDefault),
+    reasoning: String(raw?.reasoning ?? raw?.claim ?? ""),
+    modelUsed,
     groundingSources,
   };
 }
@@ -230,6 +237,32 @@ function normalizeAgent(o: Record<string, unknown>): AgentOutput | null {
   const groundingSources = Array.isArray(groundingSourcesRaw)
     ? groundingSourcesRaw.map(String)
     : undefined;
+  const committeeRole =
+    o.committeeRole != null
+      ? String(o.committeeRole)
+      : o.committee_role != null
+        ? String(o.committee_role)
+        : undefined;
+  const metricLens =
+    o.metricLens != null ? String(o.metricLens) : o.metric_lens != null ? String(o.metric_lens) : undefined;
+
+  let metrics: AgentMetric[] | undefined;
+  const metricsRaw = o.metrics;
+  if (Array.isArray(metricsRaw)) {
+    const parsed = metricsRaw
+      .map((item) => {
+        if (!item || typeof item !== "object") return null;
+        const r = item as Record<string, unknown>;
+        return {
+          label: String(r.label ?? ""),
+          score: Number(r.score ?? 0),
+          fullMark: Number(r.fullMark ?? r.full_mark ?? 100),
+        };
+      })
+      .filter((x): x is AgentMetric => x !== null);
+    if (parsed.length) metrics = parsed;
+  }
+
   return {
     agentName,
     score,
@@ -239,6 +272,9 @@ function normalizeAgent(o: Record<string, unknown>): AgentOutput | null {
     reasoning,
     ...(modelUsed !== undefined ? { modelUsed } : {}),
     ...(groundingSources !== undefined ? { groundingSources } : {}),
+    ...(committeeRole !== undefined ? { committeeRole } : {}),
+    ...(metricLens !== undefined ? { metricLens } : {}),
+    ...(metrics !== undefined ? { metrics } : {}),
   };
 }
 
@@ -272,7 +308,9 @@ function mapAnalyzeResponseToResult(
   api: AnalyzeApiData,
   mock: AnalysisResult | undefined
 ): AnalysisResult | null {
-  const entity = ENTITIES.find((e) => e.id === routeEntityId);
+  const resolvedRouteId = resolveMockResultsKey(routeEntityId);
+  const entity =
+    ENTITIES.find((e) => e.id === routeEntityId) ?? ENTITIES.find((e) => e.id === resolvedRouteId);
   if (!entity) return null;
 
   const judge =
@@ -394,10 +432,105 @@ function mergeJudgeIntoResult(prev: AnalysisResult, judge: Record<string, unknow
   };
 }
 
+function agentsForCommittee(result: AnalysisResult, agentOutputs: AgentOutput[]): AgentOutput[] {
+  return agentOutputs.length > 0 ? agentOutputs : result.agents;
+}
+
+/** Fallback when review series is not ready (legacy metric-based radar). */
+function buildRadarChartData(radarData: AnalysisResult["radarData"]): RadarChartDatum[] {
+  return radarData.map((row) => {
+    const stripped = row.dimension.replace(/^\d+\.\s*/, "").trim();
+    return {
+      ...row,
+      agentHeading: headingForRadarDimension(row.dimension),
+      angleLabel: stripped || row.dimension,
+    };
+  });
+}
+
+/** Short tick labels for the five committee axes (Performance Radar). */
+const RADAR_AXIS_SHORT: Record<string, string> = {
+  "Environmental Agent": "Environmental",
+  "Momentum Agent": "Momentum",
+  "Risk Agent": "Risk",
+  "Social Agent": "Social",
+  [AGENT_HEADING_DEVILS_ADVOCATE]: "Devil's Advocate",
+};
+
+/** One radar point per agent: score = average for that agent from the multi-agent review. */
+function buildRadarChartFromReviewAgents(agents: AgentOutput[]): RadarChartDatum[] {
+  return agents.map((a) => {
+    const role = (a.committeeRole ?? a.agentName).trim();
+    return {
+      dimension: role,
+      score: a.score,
+      fullMark: 100 as const,
+      agentHeading: role,
+      angleLabel: RADAR_AXIS_SHORT[role] ?? role.replace(/\s+Agent$/, "").trim(),
+    };
+  });
+}
+
+/** Offline answers for USE_MOCK_DATA — uses verdict, agents, and devils advocate text only. */
+function mockCommitteeAnswer(question: string, result: AnalysisResult, agentOutputs: AgentOutput[]): string {
+  const q = question.trim().toLowerCase();
+  const agents = agentsForCommittee(result, agentOutputs);
+  if (agents.length === 0) {
+    return (
+      result.devilsAdvocate?.challenge?.slice(0, 400) ||
+      "Open the agent cards above — no committee lines loaded yet."
+    );
+  }
+
+  const lowest = agents.reduce((a, b) => (a.confidence <= b.confidence ? a : b));
+  const byName = (re: RegExp) => agents.find((x) => re.test(x.agentName));
+  const equityLike =
+    byName(/equity|housing|afford|tenant|resident/i) ??
+    byName(/social|urban development|development quality|development/i) ??
+    agents[agents.length - 1];
+
+  if (/who benefits|benefits from|benefit from|this investment|the investment|green investment/i.test(q)) {
+    const r = equityLike.reasoning.slice(0, 320);
+    const kf = equityLike.keyFindings?.[0] ? ` For example: ${equityLike.keyFindings[0]}` : "";
+    const prefix =
+      result.verdict === "CONTESTED"
+        ? "Benefits are contested across agents. "
+        : result.verdict === "IMPROVING"
+          ? "Stakeholders seeing upside include communities aligned with the improving signals. "
+          : "";
+    return `${prefix}${equityLike.agentName} focuses who bears costs vs. gains: ${r}${kf}`;
+  }
+
+  if (/change (this |the )?verdict|what would change|improve the verdict|move to improving/i.test(q)) {
+    return `The verdict is ${result.verdict} (${result.dissentLevel} dissent). To shift it, the committee would look for stronger evidence where scores are weakest — currently ${lowest.agentName} at ${lowest.score}/100 (${(lowest.confidence * 100).toFixed(0)}% confidence) — and a substantive response to the devils advocate challenge aimed at ${result.devilsAdvocate?.targetAgent ?? "the lead narrative"}.`;
+  }
+
+  if (/lowest confidence|least confident|which agent.*confidence/i.test(q)) {
+    const tail = lowest.reasoning.length > 300 ? `${lowest.reasoning.slice(0, 300)}…` : lowest.reasoning;
+    return `${lowest.agentName} has the lowest confidence (${(lowest.confidence * 100).toFixed(0)}%). ${tail}`;
+  }
+
+  if (/displacement|gentrification|rent burden|pricing out|vulnerable|who loses|evict/i.test(q)) {
+    const disp =
+      agents.find((a) =>
+        /displacement|gentrification|rent|evict|afford|tenant|resident|equity|burden/i.test(
+          `${a.agentName} ${a.reasoning} ${(a.keyFindings ?? []).join(" ")}`
+        )
+      ) ?? equityLike;
+    const findings = (disp.keyFindings ?? []).slice(0, 2).join(" ");
+    const body = findings || disp.reasoning.slice(0, 360);
+    return `${disp.agentName} surfaces displacement-related risk: ${body}${body.length >= 360 ? "…" : ""}`;
+  }
+
+  const da = result.devilsAdvocate;
+  return `From this analysis snapshot: ${result.entity.name} — ${result.verdict}, ${result.dissentLevel} dissent. ${
+    da?.challenge ? `Central tension: ${da.challenge.slice(0, 240)}${da.challenge.length > 240 ? "…" : ""}` : `${agents[0].agentName}: ${agents[0].reasoning.slice(0, 200)}…`
+  } For unrestricted follow-up, run the backend with VITE_USE_MOCK_DATA=false.`;
+}
+
 export function AnalysisView() {
   const { mode, entityId } = useParams<{ mode: string; entityId: string }>();
   const navigate = useNavigate();
-  const verdictCardRef = useRef<HTMLDivElement>(null);
 
   const [phase, setPhase] = useState<AnalysisPhase>("idle");
   const [progress, setProgress] = useState(0);
@@ -410,18 +543,58 @@ export function AnalysisView() {
   const [result, setResult] = useState<AnalysisResult | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [usedMockFallback, setUsedMockFallback] = useState(false);
-  const [historyKey, setHistoryKey] = useState(0);
   const [userQuestion, setUserQuestion] = useState("");
   const [questionAnswer, setQuestionAnswer] = useState("");
   const [askingQuestion, setAskingQuestion] = useState(false);
   const [sseStatus, setSseStatus] = useState("");
+  /** Bumps when user clicks Rerun so streaming can restart without unstable deps (phase/loading/result). */
+  const [streamNonce, setStreamNonce] = useState(0);
+
+  /** Full five-agent series (used for Performance Radar). Devil's Advocate appears only in the purple Dissent panel. */
+  const fiveAgentReview = useMemo(() => {
+    if (!result || phase !== "complete") return null;
+    return buildFiveAgentReview(result, agentOutputs);
+  }, [result, agentOutputs, phase]);
+
+  /** Four scoring agent cards; Devil's Advocate is excluded (see DissentMap). */
+  const displayAgents = useMemo(() => {
+    if (phase !== "complete" || !fiveAgentReview) return agentOutputs;
+    return fiveAgentReview.filter((a) => a.committeeRole !== AGENT_HEADING_DEVILS_ADVOCATE);
+  }, [agentOutputs, phase, fiveAgentReview]);
+
+  useEffect(() => {
+    console.log("AnalysisView mounted, entityId:", entityId, "phase:", phase);
+  }, [entityId, phase]);
 
   const snowflakeHistoryEntityId = entityId ? SNOWFLAKE_ENTITY_ID[entityId] ?? entityId : "";
+
+  const phaseRef = useRef(phase);
+  const resultRef = useRef(result);
+  const loadingRef = useRef(loading);
+  const agentOutputsRef = useRef<AgentOutput[]>([]);
+  phaseRef.current = phase;
+  resultRef.current = result;
+  loadingRef.current = loading;
+  agentOutputsRef.current = agentOutputs;
 
   const handleAskQuestion = async (overrideQ?: string) => {
     const q = overrideQ ?? userQuestion;
     if (!q.trim()) return;
+    if (USE_MOCK_DATA) {
+      if (!result) {
+        setQuestionAnswer("Load an analysis first.");
+        setUserQuestion("");
+        return;
+      }
+      setAskingQuestion(true);
+      setQuestionAnswer("");
+      window.setTimeout(() => {
+        setQuestionAnswer(mockCommitteeAnswer(q, result, agentOutputs));
+        setAskingQuestion(false);
+        setUserQuestion("");
+      }, 180);
+      return;
+    }
     setAskingQuestion(true);
     setQuestionAnswer("");
     try {
@@ -470,7 +643,15 @@ export function AnalysisView() {
       setResult(null);
       setLoading(false);
       setError(null);
-      setUsedMockFallback(false);
+      return;
+    }
+
+    if (USE_MOCK_DATA) {
+      const mockKey = resolveMockResultsKey(entityId);
+      const mock = MOCK_RESULTS[mockKey];
+      setResult(mock ?? null);
+      setError(mock ? null : "No demo bundle for this route.");
+      setLoading(false);
       return;
     }
 
@@ -478,7 +659,6 @@ export function AnalysisView() {
     let cancelled = false;
     setLoading(true);
     setError(null);
-    setUsedMockFallback(false);
 
     fetch(`${API_BASE}/analyze`, {
       method: "POST",
@@ -491,18 +671,16 @@ export function AnalysisView() {
       })
       .then((payload) => {
         if (cancelled) return;
-        const mock = MOCK_RESULTS[entityId];
+        const mock = MOCK_RESULTS[resolveMockResultsKey(entityId)];
         if (payload.found && payload.data) {
           const mapped = mapAnalyzeResponseToResult(entityId, payload.data, mock);
           if (mapped) {
             setResult(mapped);
-            setUsedMockFallback(false);
             return;
           }
         }
         if (mock) {
           setResult(mock);
-          setUsedMockFallback(true);
         } else {
           setResult(null);
         }
@@ -510,10 +688,9 @@ export function AnalysisView() {
       .catch((e: unknown) => {
         if (cancelled) return;
         setError(e instanceof Error ? e.message : "Request failed");
-        const mock = MOCK_RESULTS[entityId];
+        const mock = MOCK_RESULTS[resolveMockResultsKey(entityId)];
         if (mock) {
           setResult(mock);
-          setUsedMockFallback(true);
         } else {
           setResult(null);
         }
@@ -550,32 +727,30 @@ export function AnalysisView() {
       setPhase("complete");
       setShowVerdict(true);
       setShowDevilsAdvocate(true);
-      setUsedMockFallback(false);
       setProgress(100);
       setStreamingAgentIndex(-1);
       setStreamedText({});
       setSseStatus("");
+    } else {
+      setPhase("idle");
+      setAgentOutputs([]);
     }
   }, [entityId, loading]);
 
   useEffect(() => {
-    if (!entityId || loading || !result) return;
-    if (phase === "complete") return;
-
-    const initialResult = result;
-
-    setPhase("idle");
-    setProgress(0);
-    setStreamingAgentIndex(-1);
-    setAgentOutputs([]);
-    setStreamedText({});
-    setShowDevilsAdvocate(false);
-    setShowVerdict(false);
-    setSseStatus("");
+    if (!entityId || !mode) {
+      return () => {};
+    }
+    if (!(phaseRef.current === "complete" && agentOutputsRef.current.length > 0)) {
+      setPhase("streaming");
+    }
+    console.log("Streaming effect fired, phase:", phaseRef.current, "entityId:", entityId);
 
     let cancelled = false;
-    let es: EventSource | null = null;
+    let pollTimer: ReturnType<typeof setTimeout> | null = null;
     let fallbackTimer: ReturnType<typeof setTimeout> | null = null;
+    let es: EventSource | null = null;
+    let agentCount = 0;
 
     const runMockStreaming = async (r: AnalysisResult) => {
       for (let i = 0; i < r.agents.length; i++) {
@@ -583,7 +758,11 @@ export function AnalysisView() {
         const agent = r.agents[i];
         setStreamingAgentIndex(i);
         setProgress(((i + 1) / r.agents.length) * 100);
-        setAgentOutputs((prev) => [...prev, agent]);
+        setAgentOutputs((prev) => {
+          const exists = prev.some((a) => a.agentName === agent.agentName);
+          if (exists) return prev;
+          return [...prev, agent];
+        });
         setTimeout(() => {
           document.getElementById("agent-list")?.scrollIntoView({ behavior: "smooth", block: "end" });
         }, 100);
@@ -607,7 +786,7 @@ export function AnalysisView() {
       setShowDevilsAdvocate(true);
 
       try {
-        if (snowflakeHistoryEntityId) {
+        if (!USE_MOCK_DATA && snowflakeHistoryEntityId) {
           const res = await fetch(`${API_BASE}/analyze`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -615,8 +794,6 @@ export function AnalysisView() {
           });
           if (!res.ok) {
             console.warn("Analyze POST failed:", res.status);
-          } else {
-            setHistoryKey((k) => k + 1);
           }
         }
       } catch (e) {
@@ -629,7 +806,7 @@ export function AnalysisView() {
       savePoint("complete", { result: r, agents: r.agents });
     };
 
-    const applyMockFallback = () => {
+    const applyMockFallback = (baseline: AnalysisResult) => {
       if (cancelled) return;
       if (es) {
         es.close();
@@ -640,42 +817,47 @@ export function AnalysisView() {
         fallbackTimer = null;
       }
       setSseStatus("");
-      setResult(initialResult);
-      setUsedMockFallback(true);
-      void runMockStreaming(initialResult);
+      setResult(baseline);
+      void runMockStreaming(baseline);
     };
 
-    const startTimer = setTimeout(() => {
+    const startSession = (initialResult: AnalysisResult) => {
+      setProgress(0);
+      setStreamingAgentIndex(-1);
+      setAgentOutputs([]);
+      setStreamedText({});
+      setShowDevilsAdvocate(false);
+      setShowVerdict(false);
+      setSseStatus("");
+
+      agentCount = 0;
+      const seenAgentNames = new Set<string>();
+
       if (cancelled) return;
-      setPhase("streaming");
       setResult((prev) => (prev ? { ...prev, agents: [] } : null));
 
-      let agentCount = 0;
       const streamTarget = STREAM_DEMO_TARGET[entityId] ?? entityId;
       const modeParam =
         mode === "neighborhood" ? "neighborhood" : mode === "hub" ? "hub" : "company";
+      const url = `${API_BASE}/analyze/stream?target=${encodeURIComponent(streamTarget)}&mode=${encodeURIComponent(modeParam)}`;
+      console.log("Opening SSE:", url);
 
       fallbackTimer = setTimeout(() => {
         if (agentCount === 0) {
-          applyMockFallback();
+          applyMockFallback(initialResult);
         }
-      }, 25000);
+      }, 30000);
 
-      es = new EventSource(
-        `${API_BASE}/analyze/stream?target=${encodeURIComponent(streamTarget)}&mode=${encodeURIComponent(modeParam)}`
-      );
+      es = new EventSource(url);
+      console.log("EventSource created:", es.url, "readyState:", es.readyState);
       setSseStatus("Connecting...");
-      console.log(
-        "SSE connecting to:",
-        `${API_BASE}/analyze/stream?target=${streamTarget}&mode=${modeParam}`
-      );
       es.onopen = () => {
+        console.log("SSE OPENED");
         setSseStatus("Connected — waiting for agents");
-        console.log("SSE opened to:", es?.url);
       };
       es.onerror = (e) => {
+        console.error("SSE ERROR:", e, "readyState:", es?.readyState);
         setSseStatus("Connection error — using cached data");
-        console.error("SSE error", e);
       };
 
       es.addEventListener("round_start", () => {
@@ -693,18 +875,31 @@ export function AnalysisView() {
         savePoint("agents_start", { result: { ...initialResult, agents: [] } });
       });
 
-      es.addEventListener("agent_result", (e) => {
+      es.addEventListener("agent_result", (e: MessageEvent) => {
         try {
-          const ev = e as MessageEvent;
-          const raw = JSON.parse(ev.data as string) as Record<string, unknown>;
-          console.log("Agent received:", raw.name, raw.score);
+          const raw = JSON.parse(e.data as string) as Record<string, unknown>;
+          console.log("Agent arrived:", raw?.name, raw?.score);
+
+          const rawName = String(raw.name ?? "");
           agentCount++;
           const agent = geminiAgentToAgentOutput(raw, agentCount - 1);
-          const rawName = String(raw.name ?? "");
-          setAgentOutputs((prev) => [...prev, agent]);
+          if (seenAgentNames.has(agent.agentName)) {
+            agentCount--;
+            return;
+          }
+          seenAgentNames.add(agent.agentName);
+
+          setAgentOutputs((prev) => {
+            const exists = prev.some((a) => a.agentName === agent.agentName);
+            if (exists) return prev;
+            return [...prev, agent];
+          });
+
           setResult((prev) => {
             if (!prev) return null;
-            const nextAgents = [...(prev.agents ?? []), agent];
+            const agents = prev.agents ?? [];
+            if (agents.some((a) => a.agentName === agent.agentName)) return prev;
+            const nextAgents = [...agents, agent];
             let nextEntity = prev.entity;
             if (rawName === "Environmental" || rawName === "Risk") {
               const cv = extractCvFromPacketLike(raw);
@@ -715,17 +910,26 @@ export function AnalysisView() {
                 airQualityPm25: cv.airQualityPm25 ?? prev.entity.airQualityPm25,
               };
             }
+            if (raw.heat_intensity_score !== undefined) {
+              const heat = Number(raw.heat_intensity_score);
+              if (Number.isFinite(heat)) {
+                nextEntity = {
+                  ...nextEntity,
+                  heatIntensityScore: Math.round(heat),
+                };
+              }
+            }
             const nextResult = { ...prev, agents: nextAgents, entity: nextEntity };
             savePoint("streaming", { result: nextResult, agents: nextAgents });
             return nextResult;
           });
+
           setProgress((agentCount / 4) * 100);
           setTimeout(() => {
             document.getElementById("agent-list")?.scrollIntoView({ behavior: "smooth", block: "end" });
           }, 100);
         } catch (err) {
-          const ev = e as MessageEvent;
-          console.error("Failed to parse agent_result:", err, ev.data);
+          console.error("Parse error:", err);
         }
       });
 
@@ -751,7 +955,6 @@ export function AnalysisView() {
         setSseStatus("");
         setShowVerdict(true);
         setPhase("complete");
-        setHistoryKey((k) => k + 1);
         setResult((prev) => {
           if (prev) {
             savePoint("complete", { result: prev, agents: prev.agents });
@@ -759,42 +962,36 @@ export function AnalysisView() {
           return prev;
         });
       });
+    };
 
-      es.addEventListener("error", () => {
-        es?.close();
-        es = null;
-        if (agentCount === 0) {
-          applyMockFallback();
-        }
-      });
-    }, 500);
+    const waitForReady = () => {
+      if (cancelled) return;
+      if (phaseRef.current === "complete" && agentOutputsRef.current.length > 0) {
+        return;
+      }
+      if (loadingRef.current || !resultRef.current) {
+        pollTimer = window.setTimeout(waitForReady, 16);
+        return;
+      }
+      const initialResult = resultRef.current;
+      if (!initialResult) return;
+      if (USE_MOCK_DATA) {
+        void runMockStreaming(initialResult);
+        return;
+      }
+      startSession(initialResult);
+    };
+
+    waitForReady();
 
     return () => {
       cancelled = true;
-      clearTimeout(startTimer);
+      if (pollTimer != null) clearTimeout(pollTimer);
       if (fallbackTimer) clearTimeout(fallbackTimer);
       es?.close();
       setSseStatus("");
     };
-  }, [entityId, loading, mode, phase, snowflakeHistoryEntityId, savePoint]);
-
-  const handleExportVerdict = async () => {
-    if (!verdictCardRef.current) return;
-
-    try {
-      const canvas = await html2canvas(verdictCardRef.current, {
-        backgroundColor: "#0f172a",
-        scale: 2,
-      });
-
-      const link = document.createElement("a");
-      link.download = `strata-verdict-${entityId}.png`;
-      link.href = canvas.toDataURL("image/png");
-      link.click();
-    } catch (err) {
-      console.error("Export failed:", err);
-    }
-  };
+  }, [entityId, mode, snowflakeHistoryEntityId, streamNonce]);
 
   if (loading && !result) {
     return (
@@ -857,15 +1054,25 @@ export function AnalysisView() {
                 Back
               </Button>
               <div className="flex items-center gap-2">
-                {mode === "neighborhood" ? (
-                  <MapPin className="h-5 w-5 text-emerald-400" />
-                ) : (
+                {mode === "corporate" ? (
                   <Building2 className="h-5 w-5 text-emerald-400" />
+                ) : (
+                  <MapPin className="h-5 w-5 text-emerald-400" />
                 )}
                 <div>
                   <h1 className="text-lg font-semibold text-white">{result.entity.name}</h1>
+                  {result.entity.location && (
+                    <div className="text-xs text-white/30 font-mono mt-0.5">
+                      {result.entity.address ??
+                        `${result.entity.location.lat.toFixed(4)}, ${result.entity.location.lng.toFixed(4)}`}
+                    </div>
+                  )}
                   <p className="text-xs text-slate-400">
-                    {mode === "neighborhood" ? "Neighborhood Analysis" : "Corporate Analysis"}
+                    {mode === "neighborhood"
+                      ? "Neighborhood Analysis"
+                      : mode === "hub"
+                        ? "City Hub Analysis"
+                        : "Corporate Analysis"}
                     {showVerdict && (
                       <span className={`ml-2 font-mono ${VERDICT_THEME[result.verdict].text}`}>
                         · {result.verdict}
@@ -876,11 +1083,6 @@ export function AnalysisView() {
               </div>
             </div>
             <div className="flex items-center gap-2">
-              {(error || usedMockFallback) && (
-                <Badge variant="outline" className="border-amber-500/40 text-amber-300 text-xs">
-                  {error ? "Live API unavailable — showing cached demo data" : "Demo data (no Snowflake row)"}
-                </Badge>
-              )}
               {phase === "complete" && (
                 <button
                   type="button"
@@ -894,24 +1096,14 @@ export function AnalysisView() {
                     setStreamingAgentIndex(-1);
                     setStreamedText({});
                     setSseStatus("");
-                    const baseline = entityId ? MOCK_RESULTS[entityId] : undefined;
-                    setResult(baseline ?? result);
+                    const baseline = entityId ? MOCK_RESULTS[resolveMockResultsKey(entityId)] : undefined;
+                    setResult((prev) => baseline ?? prev ?? null);
+                    setStreamNonce((n) => n + 1);
                   }}
                   className="text-xs text-slate-400 hover:text-white border border-slate-600 rounded px-3 py-1 transition-colors"
                 >
                   ↺ Rerun Analysis
                 </button>
-              )}
-              {showVerdict && (
-                <Button
-                  onClick={handleExportVerdict}
-                  variant="outline"
-                  size="sm"
-                  className="border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10"
-                >
-                  <Download className="h-4 w-4 mr-2" />
-                  Export Verdict
-                </Button>
               )}
             </div>
           </div>
@@ -931,96 +1123,113 @@ export function AnalysisView() {
           </div>
         )}
 
-        {phase === "streaming" && (
+        {(phase === "streaming" || agentOutputs.length > 0) && (
           <div className="mb-8">
-            <div className="flex items-center gap-3 mb-6">
-              <div className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
-              <span className="text-emerald-400 font-mono text-sm font-bold tracking-widest uppercase">
-                Live Committee Session
-              </span>
-              <span className="text-muted-foreground font-mono text-xs">
-                — {agentOutputs.length} of 4 agents reporting
-              </span>
-            </div>
-            {sseStatus && (
-              <div className="text-xs font-mono text-muted-foreground/50 mb-2">{sseStatus}</div>
+            {phase === "streaming" && (
+              <>
+                <div className="flex items-center gap-2 text-xs text-emerald-400 font-mono mb-4 animate-pulse">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                  LIVE COMMITTEE SESSION — {agentOutputs.length} of 4 scoring agents
+                </div>
+                {sseStatus && (
+                  <div className="text-xs font-mono text-muted-foreground/50 mb-2">{sseStatus}</div>
+                )}
+              </>
             )}
 
-            <div className="grid grid-cols-2 gap-4" id="agent-list">
-              {agentOutputs.map((agent, index) => (
-                <AgentCard
-                  key={`${agent.agentName}-${index}`}
-                  agent={agent}
-                  isStreaming={streamingAgentIndex === index}
-                  streamedText={streamedText[index]}
-                  isComplete={
-                    phase === "complete" ||
-                    streamingAgentIndex !== index ||
-                    streamingAgentIndex < 0
-                  }
-                  className={
-                    phase === "streaming" && index === agentOutputs.length - 1
-                      ? "ring-1 ring-emerald-400/50 shadow-lg shadow-emerald-400/10"
-                      : ""
-                  }
-                />
-              ))}
-
-              {Array.from({ length: Math.max(0, 4 - agentOutputs.length) }).map((_, i) => (
-                <div
-                  key={`pending-${i}`}
-                  className="rounded-xl border border-border/30 bg-card/30 p-6 flex items-center justify-center min-h-32"
-                >
-                  <div className="flex items-center gap-2 text-muted-foreground/40">
-                    <div className="w-1.5 h-1.5 rounded-full bg-current animate-pulse" />
-                    <span className="text-xs font-mono">Awaiting agent...</span>
+            {phase === "streaming" && agentOutputs.length === 0 && (
+              <div className="grid grid-cols-2 gap-4 mb-4">
+                {[0, 1, 2, 3].map((i) => (
+                  <div
+                    key={i}
+                    className="rounded-xl border border-white/5 bg-white/2 p-6 flex items-center justify-center min-h-32 animate-pulse"
+                  >
+                    <div className="flex items-center gap-2 text-white/20">
+                      <div className="w-1.5 h-1.5 rounded-full bg-emerald-400/40 animate-ping" />
+                      <span className="text-xs font-mono">Awaiting agent {i + 1}...</span>
+                    </div>
                   </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {phase !== "streaming" && (
-          <div className="mb-8">
-            <h2 className="text-2xl font-bold text-white mb-4">Multi-angle review</h2>
-            <div id="agent-list" className="grid grid-cols-1 gap-4">
-              {agentOutputs.length > 0 &&
-                agentOutputs.map((agent, index) => (
-                  <AgentCard
-                    key={`${agent.agentName}-${index}`}
-                    agent={agent}
-                    isStreaming={streamingAgentIndex === index}
-                    streamedText={streamedText[index]}
-                    isComplete={
-                      phase === "complete" ||
-                      streamingAgentIndex !== index ||
-                      streamingAgentIndex < 0
-                    }
-                  />
                 ))}
-            </div>
+              </div>
+            )}
+
+            {agentOutputs.length > 0 && (
+              <>
+                {phase === "complete" && (
+                  <div className="mb-4">
+                    <h2 className="text-2xl font-bold text-white">Multi-Agent Review</h2>
+                    <p className="text-sm text-slate-400 mt-1">
+                      {
+                        "Four scoring agents — Environmental, Momentum, Risk, Social — with data metrics and breakdowns. Devil's Advocate Agent appears once in the purple panel below."
+                      }
+                    </p>
+                  </div>
+                )}
+
+                <div
+                  className={
+                    phase === "streaming" ? "grid grid-cols-2 gap-4" : "grid grid-cols-1 gap-4"
+                  }
+                  id="agent-list"
+                >
+                  {displayAgents.map((agent, index) => (
+                    <AgentCard
+                      key={`${agent.committeeRole ?? agent.agentName}-${index}`}
+                      agent={agent}
+                      isStreaming={phase !== "complete" && streamingAgentIndex === index}
+                      streamedText={phase !== "complete" ? streamedText[index] : undefined}
+                      isComplete={
+                        phase === "complete" ||
+                        streamingAgentIndex !== index ||
+                        streamingAgentIndex < 0
+                      }
+                      className={
+                        phase === "streaming" && index === agentOutputs.length - 1
+                          ? "ring-1 ring-emerald-400/50 shadow-lg shadow-emerald-400/10"
+                          : ""
+                      }
+                    />
+                  ))}
+
+                  {phase === "streaming" &&
+                    Array.from({ length: Math.max(0, 4 - agentOutputs.length) }).map((_, i) => (
+                      <div
+                        key={`pending-${i}`}
+                        className="rounded-xl border border-border/30 bg-card/30 p-6 flex items-center justify-center min-h-32"
+                      >
+                        <div className="flex items-center gap-2 text-muted-foreground/40">
+                          <div className="w-1.5 h-1.5 rounded-full bg-current animate-pulse" />
+                          <span className="text-xs font-mono">Awaiting agent...</span>
+                        </div>
+                      </div>
+                    ))}
+                </div>
+              </>
+            )}
           </div>
         )}
 
         {showDevilsAdvocate && (
-          <div className="mb-8 grid grid-cols-1 lg:grid-cols-2 gap-8 items-start">
+          <div className="mb-8 w-full min-w-0">
             <DissentMap devilsAdvocate={result.devilsAdvocate} />
-            <VerdictHistory entityId={snowflakeHistoryEntityId} refreshKey={historyKey} />
           </div>
         )}
 
         {showVerdict && (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
-            <div ref={verdictCardRef}>
-              <VerdictCard
-                verdict={result.verdict}
-                dissentLevel={result.dissentLevel}
-                dissentScore={result.dissentScore}
-                entityName={result.entity.name}
-              />
-            </div>
-            <RadarChart data={result.radarData} />
+            <VerdictCard
+              verdict={result.verdict}
+              dissentLevel={result.dissentLevel}
+              dissentScore={result.dissentScore}
+              entityName={result.entity.name}
+            />
+            <RadarChart
+              data={
+                fiveAgentReview?.length
+                  ? buildRadarChartFromReviewAgents(fiveAgentReview)
+                  : buildRadarChartData(result.radarData)
+              }
+            />
           </div>
         )}
 

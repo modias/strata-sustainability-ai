@@ -276,7 +276,7 @@ def ask_committee(body: AskRequest):
         "agents": body.agents,
         "context": body.context,
     }
-    # Uses run_agent → Google Search grounding on every Gemini call (see gemini_client.run_agent).
+    # Uses run_agent → Gemini only (see gemini_client.run_agent).
     out = run_agent(_ASK_SYSTEM, packet)
     if isinstance(out, dict):
         ans = out.get("answer")

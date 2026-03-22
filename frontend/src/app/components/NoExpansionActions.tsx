@@ -12,7 +12,31 @@ interface NoExpansionActionsProps {
   }[];
 }
 
+/** Approximate duration in months for sorting (days/weeks converted consistently). */
+export function parseTimeframeToMonths(timeframe: string): number {
+  const s = timeframe.trim().toLowerCase();
+  const yearMatch = s.match(/(\d+(?:\.\d+)?)\s*years?/);
+  if (yearMatch) return Number(yearMatch[1]) * 12;
+  const monthMatch = s.match(/(\d+(?:\.\d+)?)\s*months?/);
+  if (monthMatch) return Number(monthMatch[1]);
+  const weekMatch = s.match(/(\d+(?:\.\d+)?)\s*weeks?/);
+  if (weekMatch) return (Number(weekMatch[1]) * 7) / 30.4375;
+  const dayMatch = s.match(/(\d+(?:\.\d+)?)\s*days?/);
+  if (dayMatch) return Number(dayMatch[1]) / 30.4375;
+  return Number.POSITIVE_INFINITY;
+}
+
 export function NoExpansionActions({ actions }: NoExpansionActionsProps) {
+  const sortedActions = [...actions]
+    .map((action, index) => ({ action, index }))
+    .sort((a, b) => {
+      const dt =
+        parseTimeframeToMonths(a.action.timeframe) - parseTimeframeToMonths(b.action.timeframe);
+      if (dt !== 0) return dt;
+      return a.index - b.index;
+    })
+    .map(({ action }) => action);
+
   const getTimeframeColor = (timeframe: string) => {
     if (timeframe.includes("90 days")) return "border-emerald-500/30 text-emerald-400";
     if (timeframe.includes("6 months")) return "border-amber-500/30 text-amber-400";
@@ -42,7 +66,7 @@ export function NoExpansionActions({ actions }: NoExpansionActionsProps) {
         </CardHeader>
         <CardContent className="space-y-4">
           {/* Actions List */}
-          {actions.map((action, i) => (
+          {sortedActions.map((action, i) => (
             <div
               key={i}
               className="bg-slate-900/50 rounded-lg p-5 border border-emerald-500/20 hover:border-emerald-500/40 transition-colors"
@@ -90,8 +114,8 @@ export function NoExpansionActions({ actions }: NoExpansionActionsProps) {
             <p className="text-sm text-slate-400 leading-relaxed">
               Most sustainability consultants recommend investment. STRATA tells you what to do{" "}
               <strong className="text-slate-300">without spending anything</strong>. Each action is filtered by a
-              single prompt constraint—no capex above $50k, no new headcount, no facility changes—and ranked by carbon
-              impact per dollar of implementation cost. This is the output that makes corporate mode immediately useful
+              single prompt constraint—no capex above $50k, no new headcount, no facility changes—and listed from
+              shortest implementation time to longest. This is the output that makes corporate mode immediately useful
               rather than advisory.
             </p>
           </div>

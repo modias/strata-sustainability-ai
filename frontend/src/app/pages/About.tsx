@@ -249,8 +249,8 @@ export function About() {
               <h3 className="font-semibold text-emerald-400 mb-3">No-Expansion Actions</h3>
               <p className="text-slate-300 text-sm leading-relaxed">
                 For corporate mode: improvements achievable with zero new capital expenditure, no new headcount, no
-                facility changes. Ranked by carbon impact per dollar. Most sustainability consultants charge $200k for
-                this list.
+                facility changes. Shown shortest timeframe first. Most sustainability consultants charge $200k for this
+                list.
               </p>
             </div>
           </div>

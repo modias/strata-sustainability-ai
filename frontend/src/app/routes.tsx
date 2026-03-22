@@ -1,8 +1,8 @@
 import { createBrowserRouter } from "react-router";
 import { Root } from "./components/Root";
 import { Home } from "./components/Home";
-import { FeaturedCompanies } from "./components/FeaturedCompanies";
-import { CorporateHubs } from "./components/CorporateHubs";
+import { FeaturedCompanies } from "./pages/FeaturedCompanies";
+import { CorporateHubs } from "./pages/CorporateHubs";
 import { AnalysisView } from "./components/AnalysisView";
 import { About } from "./pages/About";
 
