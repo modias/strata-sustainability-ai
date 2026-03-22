@@ -2,15 +2,29 @@ import { motion } from "motion/react";
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
 import { Radar, RadarChart as RechartsRadar, PolarGrid, PolarAngleAxis, PolarRadiusAxis, ResponsiveContainer } from "recharts";
 
+export type RadarChartDatum = {
+  dimension: string;
+  score: number;
+  fullMark: number;
+  /** Committee agent name (matches Performance Radar axes). */
+  agentHeading: string;
+  /** Short label for polar ticks. */
+  angleLabel?: string;
+};
+
 interface RadarChartProps {
-  data: {
-    dimension: string;
-    score: number;
-    fullMark: number;
-  }[];
+  data: RadarChartDatum[];
 }
 
 export function RadarChart({ data }: RadarChartProps) {
+  const chartRows = data.map((d) => ({
+    ...d,
+    angleLabel:
+      d.angleLabel?.trim() ||
+      d.dimension.replace(/^\d+\.\s*/, "").trim() ||
+      d.dimension,
+  }));
+
   return (
     <motion.div
       initial={{ opacity: 0, scale: 0.95 }}
@@ -20,13 +34,15 @@ export function RadarChart({ data }: RadarChartProps) {
       <Card className="bg-slate-900/50 border-slate-800 h-full">
         <CardHeader>
           <CardTitle className="text-white text-xl">Performance Radar</CardTitle>
-          <p className="text-sm text-slate-400">Multi-dimensional sustainability scoring</p>
+          <p className="text-sm text-slate-400">
+            One score per committee agent — values match each agent&apos;s average score in the Multi-Agent Review.
+          </p>
         </CardHeader>
         <CardContent>
           <ResponsiveContainer width="100%" height={400}>
-            <RechartsRadar data={data}>
+            <RechartsRadar data={chartRows}>
               <PolarGrid stroke="#334155" />
-              <PolarAngleAxis dataKey="dimension" tick={{ fill: "#94a3b8", fontSize: 12 }} />
+              <PolarAngleAxis dataKey="angleLabel" tick={{ fill: "#94a3b8", fontSize: 11 }} />
               <PolarRadiusAxis angle={90} domain={[0, 100]} tick={{ fill: "#64748b", fontSize: 10 }} />
               <Radar
                 name="Score"
@@ -39,15 +55,16 @@ export function RadarChart({ data }: RadarChartProps) {
             </RechartsRadar>
           </ResponsiveContainer>
 
-          {/* Score Legend */}
           <div className="mt-4 grid grid-cols-2 gap-3">
-            {data.map((item, index) => (
+            {chartRows.map((item, index) => (
               <div
-                key={`radar-legend-${index}-${item.dimension}`}
-                className="flex items-center justify-between p-2 rounded bg-slate-800/50"
+                key={`radar-legend-${index}-${item.agentHeading}`}
+                className="flex items-center justify-between gap-2 p-2 rounded bg-slate-800/50"
               >
-                <span className="text-sm text-slate-300">{item.dimension}</span>
-                <span className="text-sm font-semibold text-emerald-400">{item.score}</span>
+                <span className="text-sm font-semibold text-white leading-tight truncate min-w-0">
+                  {item.agentHeading}
+                </span>
+                <span className="text-sm font-semibold text-emerald-400 shrink-0 tabular-nums">{item.score}</span>
               </div>
             ))}
           </div>

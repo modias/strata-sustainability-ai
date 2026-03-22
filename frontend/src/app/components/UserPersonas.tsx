@@ -9,7 +9,7 @@ export function UserPersonas() {
       name: "Maya - ESG Analyst",
       role: "$8B Asset Manager",
       story:
-        "Maya's firm is evaluating Anacostia real estate for their ESG portfolio. Normally she'd spend 3 days building a memo from EPA data and Census reports. With STRATA she types the address, watches the multi-angle review finish in 45 seconds, and sees CONTESTED with HIGH dissent flagged on displacement risk. She sends the verdict card to her manager with one note: 'Environmental story is solid but equity story is contested—recommend holding off until Q3 rent data.' Three days became 45 seconds. The decision is better, not just faster.",
+        "Maya's firm is evaluating Anacostia real estate for their ESG portfolio. Normally she'd spend 3 days building a memo from EPA data and Census reports. With STRATA she types the address, watches the Multi-Agent Review finish in 45 seconds, and sees CONTESTED with HIGH dissent flagged on displacement risk. She sends the verdict card to her manager with one note: 'Environmental story is solid but equity story is contested—recommend holding off until Q3 rent data.' Three days became 45 seconds. The decision is better, not just faster.",
       color: "from-emerald-500/20 to-teal-600/20",
       borderColor: "border-emerald-500/30",
     },

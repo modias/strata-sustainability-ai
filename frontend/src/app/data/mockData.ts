@@ -1,3 +1,5 @@
+import { getAgentCardHeadings } from "../lib/radarAgentHeadings";
+
 export type Mode = "neighborhood" | "corporate";
 
 export type Verdict = "IMPROVING" | "STAGNANT" | "DECLINING" | "CONTESTED";
@@ -16,6 +18,12 @@ export interface Entity {
   airQualityPm25?: number;
 }
 
+export interface AgentMetric {
+  label: string;
+  score: number;
+  fullMark: number;
+}
+
 export interface AgentOutput {
   agentName: string;
   score: number;
@@ -23,6 +31,12 @@ export interface AgentOutput {
   keyFindings: string[];
   dataSource: string;
   reasoning: string;
+  /** Per-metric scores (e.g. from radar + committee breakdown). */
+  metrics?: AgentMetric[];
+  /** Canonical role heading (Environmental / Social / Risk / Momentum Agent). Optional override when agentName is a scenario lens. */
+  committeeRole?: string;
+  /** Scenario-specific metric label (e.g. Energy systems, Climate resilience). */
+  metricLens?: string;
   stance?: string;
   claim?: string;
   risks?: string[];
@@ -65,7 +79,7 @@ export const ENTITIES: Entity[] = [
     name: "Anacostia, Washington DC",
     mode: "neighborhood",
     location: { lat: 38.863, lng: -76.9823 },
-    address: "1901 Mississippi Ave SE, Washington, DC 20020",
+    address: "Anacostia, Washington DC 20020",
     greenSpaceRatio: 0.18,
     heatIntensityScore: 72,
     airQualityPm25: 12.4,
@@ -93,6 +107,7 @@ export const ENTITIES: Entity[] = [
     name: "Tesla Inc.",
     mode: "corporate",
     location: { lat: 30.2272, lng: -97.798 },
+    address: "1 Tesla Rd, Austin TX 78725",
     greenSpaceRatio: 0.18,
     heatIntensityScore: 65,
     airQualityPm25: 14.2,
@@ -112,6 +127,7 @@ export const ENTITIES: Entity[] = [
     name: "Amazon.com Inc.",
     mode: "corporate",
     location: { lat: 47.6062, lng: -122.3321 },
+    address: "410 Terry Ave N, Seattle WA 98109",
     greenSpaceRatio: 0.22,
     heatIntensityScore: 58,
     airQualityPm25: 9.8,
@@ -121,8 +137,9 @@ export const ENTITIES: Entity[] = [
     name: "Microsoft Corporation",
     mode: "corporate",
     location: { lat: 47.6423, lng: -122.1391 },
+    address: "One Microsoft Way, Redmond WA 98052",
     greenSpaceRatio: 0.24,
-    heatIntensityScore: 45,
+    heatIntensityScore: 42,
     airQualityPm25: 8.1,
   },
   {
@@ -148,6 +165,7 @@ export const ENTITIES: Entity[] = [
     name: "Apple Inc.",
     mode: "corporate",
     location: { lat: 37.3346, lng: -122.009 },
+    address: "One Apple Park Way, Cupertino CA 95014",
     greenSpaceRatio: 0.31,
     heatIntensityScore: 38,
     airQualityPm25: 7.4,
@@ -157,8 +175,9 @@ export const ENTITIES: Entity[] = [
     name: "Google LLC",
     mode: "corporate",
     location: { lat: 37.422, lng: -122.0841 },
+    address: "1600 Amphitheatre Pkwy, Mountain View CA 94043",
     greenSpaceRatio: 0.28,
-    heatIntensityScore: 41,
+    heatIntensityScore: 44,
     airQualityPm25: 8.8,
   },
   {
@@ -166,8 +185,9 @@ export const ENTITIES: Entity[] = [
     name: "Nvidia Corporation",
     mode: "corporate",
     location: { lat: 37.3688, lng: -122.0363 },
+    address: "2788 San Tomas Expy, Santa Clara CA 95051",
     greenSpaceRatio: 0.18,
-    heatIntensityScore: 62,
+    heatIntensityScore: 61,
     airQualityPm25: 11.2,
   },
   {
@@ -175,6 +195,7 @@ export const ENTITIES: Entity[] = [
     name: "Samsung Electronics Co., Ltd.",
     mode: "corporate",
     location: { lat: 37.5665, lng: 126.978 },
+    address: "129 Samsung-ro, Suwon, South Korea",
     greenSpaceRatio: 0.15,
     heatIntensityScore: 71,
     airQualityPm25: 18.4,
@@ -194,7 +215,7 @@ export const ENTITIES: Entity[] = [
     name: "Boston, MA",
     mode: "neighborhood",
     location: { lat: 42.3601, lng: -71.0589 },
-    address: "Boston, MA metro area",
+    address: "Boston, Massachusetts 02101",
     greenSpaceRatio: 0.28,
     heatIntensityScore: 48,
     airQualityPm25: 9.5,
@@ -204,9 +225,9 @@ export const ENTITIES: Entity[] = [
     name: "New York City, NY",
     mode: "neighborhood",
     location: { lat: 40.7128, lng: -74.006 },
-    address: "New York City, NY metro area",
+    address: "New York City, New York 10001",
     greenSpaceRatio: 0.16,
-    heatIntensityScore: 52,
+    heatIntensityScore: 78,
     airQualityPm25: 15.0,
   },
   {
@@ -214,9 +235,9 @@ export const ENTITIES: Entity[] = [
     name: "San Francisco Bay, CA",
     mode: "neighborhood",
     location: { lat: 37.7749, lng: -122.4194 },
-    address: "San Francisco Bay Area, CA",
+    address: "San Francisco, California 94102",
     greenSpaceRatio: 0.22,
-    heatIntensityScore: 46,
+    heatIntensityScore: 41,
     airQualityPm25: 11.5,
   },
   {
@@ -224,9 +245,9 @@ export const ENTITIES: Entity[] = [
     name: "Seattle, WA",
     mode: "neighborhood",
     location: { lat: 47.6062, lng: -122.3321 },
-    address: "Seattle, WA metro area",
+    address: "Seattle, Washington 98101",
     greenSpaceRatio: 0.3,
-    heatIntensityScore: 50,
+    heatIntensityScore: 35,
     airQualityPm25: 8.5,
   },
   {
@@ -234,7 +255,7 @@ export const ENTITIES: Entity[] = [
     name: "Washington, DC",
     mode: "neighborhood",
     location: { lat: 38.9072, lng: -77.0369 },
-    address: "Washington, DC metro area",
+    address: "Washington, DC 20001",
     greenSpaceRatio: 0.34,
     heatIntensityScore: 61,
     airQualityPm25: 11.8,
@@ -244,7 +265,7 @@ export const ENTITIES: Entity[] = [
     name: "Phoenix South",
     mode: "neighborhood",
     location: { lat: 33.3528, lng: -112.074 },
-    address: "Phoenix, AZ",
+    address: "South Mountain, Phoenix AZ 85041",
     greenSpaceRatio: 0.06,
     heatIntensityScore: 89,
     airQualityPm25: 18.8,
@@ -254,7 +275,7 @@ export const ENTITIES: Entity[] = [
     name: "Detroit Midtown",
     mode: "neighborhood",
     location: { lat: 42.3462, lng: -83.0648 },
-    address: "Detroit, MI",
+    address: "Midtown Detroit, MI 48201",
     greenSpaceRatio: 0.32,
     heatIntensityScore: 38,
     airQualityPm25: 9.2,
@@ -269,6 +290,16 @@ export const ENTITIES: Entity[] = [
 export const SNOWFLAKE_ENTITY_ID: Partial<Record<string, string>> = {
   "anacostia-dc": "anacostia_test",
 };
+
+/** Route `entityId` → key in `MOCK_RESULTS` (align with `STREAM_DEMO_TARGET` in AnalysisView). */
+export const MOCK_RESULTS_ROUTE_ALIASES: Record<string, string> = {
+  "hub-nyc-ny": "hub-new-york-ny",
+  "hub-sf-bay-ca": "hub-san-francisco-ca",
+};
+
+export function resolveMockResultsKey(entityId: string): string {
+  return MOCK_RESULTS_ROUTE_ALIASES[entityId] ?? entityId;
+}
 
 // Mock analysis results
 export const MOCK_RESULTS: Record<string, AnalysisResult> = {
@@ -1770,13 +1801,251 @@ export const MOCK_RESULTS: Record<string, AnalysisResult> = {
       },
     ],
   },
+  microsoft: {
+    entity: ENTITIES[6],
+    verdict: "IMPROVING",
+    dissentLevel: "LOW",
+    dissentScore: 0.32,
+    agents: [
+      {
+        agentName: "Energy systems",
+        score: 81,
+        confidence: 0.86,
+        keyFindings: [
+          "100% renewable electricity for data centers and campuses (market-based)",
+          "Azure sustainability tools and renewable procurement for customer workloads",
+          "Energy efficiency in hardware and cooling across hyperscale regions",
+        ],
+        dataSource: "Microsoft Environmental Sustainability Report, CDP",
+        reasoning:
+          "Microsoft's energy narrative centers on renewable procurement for cloud and operations, with strong efficiency programs. Data center growth keeps absolute electricity in focus.",
+      },
+      {
+        agentName: "Carbon accounting",
+        score: 74,
+        confidence: 0.82,
+        keyFindings: [
+          "Carbon negative by 2030 commitment with interim milestones",
+          "Scope 3 including supply chain, devices, and customer use of cloud services",
+          "Science-based targets and third-party verification",
+        ],
+        dataSource: "Microsoft sustainability reporting, SBTi",
+        reasoning:
+          "Carbon accounting is relatively mature for a digital infrastructure leader; Scope 3 boundaries for cloud remain debated across the industry.",
+      },
+      {
+        agentName: "Operations",
+        score: 77,
+        confidence: 0.79,
+        keyFindings: [
+          "Circular cloud hardware and data center recycling pathways",
+          "Water stewardship programs for cooling in stressed watersheds",
+          "Sustainable procurement for food and workplace operations",
+        ],
+        dataSource: "Microsoft Environmental Sustainability Report",
+        reasoning:
+          "Operational footprint extends beyond electricity to water and materials; AI infrastructure growth increases scrutiny on total resource use.",
+      },
+      {
+        agentName: "Regulatory compliance",
+        score: 85,
+        confidence: 0.84,
+        keyFindings: [
+          "EU regulatory readiness for CSRD and digital sustainability disclosures",
+          "SEC climate disclosure alignment",
+          "Building energy benchmarking in jurisdictions with requirements",
+        ],
+        dataSource: "SEC EDGAR, EU regulatory summaries",
+        reasoning:
+          "Compliance posture is proactive for a global technology platform; climate and digital policy intersect across markets.",
+      },
+    ],
+    devilsAdvocate: {
+      targetAgent: "Energy systems",
+      challenge:
+        "Renewable matching certificates do not always equal hourly carbon-free energy in every Azure region; AI training bursts can align with fossil-heavy grid hours.",
+      counterDataSource: "Grid marginal emissions studies, hourly CFE reporting",
+      specificDataPoint: "Peak GPU cluster load vs. local grid carbon intensity during evening peaks.",
+    },
+    radarData: [
+      { dimension: "Energy Systems", score: 81, fullMark: 100 },
+      { dimension: "Carbon Accounting", score: 74, fullMark: 100 },
+      { dimension: "Operations", score: 77, fullMark: 100 },
+      { dimension: "Regulatory Compliance", score: 85, fullMark: 100 },
+      { dimension: "Overall Trajectory", score: 79, fullMark: 100 },
+    ],
+    suggestedQuestions: [
+      "How is hourly carbon-free energy reported by Azure region?",
+      "What is the net water outcome after operational and watershed investments?",
+      "How does Microsoft allocate Scope 3 for cloud customer workloads?",
+    ],
+  },
+  "phoenix-south": {
+    entity: ENTITIES[19],
+    verdict: "DECLINING",
+    dissentLevel: "HIGH",
+    dissentScore: 0.68,
+    agents: [
+      {
+        agentName: "Climate resilience",
+        score: 28,
+        confidence: 0.82,
+        keyFindings: [
+          "Extreme heat days and drought stress on sparse urban canopy",
+          "Low green space ratio and high impervious surface",
+          "Heat island intensity among the highest in the metro",
+        ],
+        dataSource: "NOAA, regional urban heat studies",
+        reasoning:
+          "South Phoenix faces acute heat exposure with limited vegetation and high paved surface share. Resilience gaps are structural.",
+      },
+      {
+        agentName: "Public health",
+        score: 35,
+        confidence: 0.78,
+        keyFindings: [
+          "Heat-related illness risk elevated for outdoor workers and seniors",
+          "Ozone and dust episodes during dry periods",
+          "Uneven access to shade and cooling centers",
+        ],
+        dataSource: "County health data, EPA AirNow",
+        reasoning:
+          "Public health outcomes are tightly coupled to heat and air quality; protective infrastructure is uneven.",
+      },
+      {
+        agentName: "Urban development",
+        score: 48,
+        confidence: 0.72,
+        keyFindings: [
+          "Auto-oriented growth patterns and long commutes",
+          "Limited green infrastructure investment relative to development pace",
+          "Water resource pressure for landscaping and cooling",
+        ],
+        dataSource: "MPO travel data, municipal planning documents",
+        reasoning:
+          "Development patterns have not yet closed the gap on heat and water resilience at neighborhood scale.",
+      },
+      {
+        agentName: "Equity & housing",
+        score: 31,
+        confidence: 0.85,
+        keyFindings: [
+          "Energy burden from cooling in older housing stock",
+          "Rent and utility cost pressure for lower-income households",
+          "Displacement risk where investment lags behind need",
+        ],
+        dataSource: "Census ACS, utility affordability programs",
+        reasoning:
+          "Climate vulnerability and economic vulnerability intersect; those least able to afford retrofits face the highest exposure.",
+      },
+    ],
+    devilsAdvocate: {
+      targetAgent: "Climate resilience",
+      challenge:
+        "Regional grid solar additions and utility efficiency programs can improve per-capita cooling emissions even where canopy is low—heat risk is not only a trees story.",
+      counterDataSource: "Utility DSM reports, regional renewable build",
+      specificDataPoint: "Cooling electricity carbon intensity vs. decade-ago baseline.",
+    },
+    radarData: [
+      { dimension: "Climate Resilience", score: 28, fullMark: 100 },
+      { dimension: "Public Health", score: 35, fullMark: 100 },
+      { dimension: "Development Quality", score: 48, fullMark: 100 },
+      { dimension: "Equity & Access", score: 31, fullMark: 100 },
+      { dimension: "Overall Trajectory", score: 36, fullMark: 100 },
+    ],
+    suggestedQuestions: [
+      "Where are the highest heat-vulnerable block groups?",
+      "Which cooling retrofits have the best cost-benefit per kWh saved?",
+      "How does tree canopy investment compare to cool-roof programs?",
+    ],
+  },
+  "detroit-midtown": {
+    entity: ENTITIES[20],
+    verdict: "CONTESTED",
+    dissentLevel: "MODERATE",
+    dissentScore: 0.51,
+    agents: [
+      {
+        agentName: "Climate resilience",
+        score: 58,
+        confidence: 0.76,
+        keyFindings: [
+          "Vacant lot greening and urban agriculture pilots improving local canopy",
+          "Stormwater green infrastructure projects along corridors",
+          "Heat island still present but moderated vs. peak vacancy years",
+        ],
+        dataSource: "City greening plans, satellite imagery trends",
+        reasoning:
+          "Midtown shows measurable greening momentum from targeted programs, but regional heat trends remain challenging.",
+      },
+      {
+        agentName: "Public health",
+        score: 52,
+        confidence: 0.74,
+        keyFindings: [
+          "Walkability improving near QLine and major corridors",
+          "Legacy industrial air quality concerns in pockets of the metro",
+          "Access to parks improving but still uneven by block",
+        ],
+        dataSource: "EPA EJSCREEN, local health dashboards",
+        reasoning:
+          "Public health trajectory is mixed: mobility gains compete with legacy environmental burdens.",
+      },
+      {
+        agentName: "Urban development",
+        score: 64,
+        confidence: 0.73,
+        keyFindings: [
+          "Tech and healthcare investment driving new residential and mixed-use",
+          "Affordable housing commitments in select projects",
+          "Commercial vacancy still a concern outside core corridors",
+        ],
+        dataSource: "Building permits, economic development reports",
+        reasoning:
+          "Development quality is improving in nodes of investment; benefits are not evenly distributed across the wider neighborhood.",
+      },
+      {
+        agentName: "Equity & housing",
+        score: 42,
+        confidence: 0.83,
+        keyFindings: [
+          "Gentrification pressure alongside revitalization narratives",
+          "Long-term residents face rent pressure without matched income growth",
+          "Energy burden in older housing stock",
+        ],
+        dataSource: "Census ACS, local housing advocacy reports",
+        reasoning:
+          "Equity and climate intersect: greening and investment can lift outcomes without guardrails or displace residents.",
+      },
+    ],
+    devilsAdvocate: {
+      targetAgent: "Urban development",
+      challenge:
+        "Your revitalization score can understate the role of community land trusts and legacy anchors that stabilize displacement in Midtown—market-rate headlines are not the whole story.",
+      counterDataSource: "Nonprofit housing portfolios, HUD affordability covenants",
+      specificDataPoint: "Permanently affordable units created or preserved in the last decade.",
+    },
+    radarData: [
+      { dimension: "Climate Resilience", score: 58, fullMark: 100 },
+      { dimension: "Public Health", score: 52, fullMark: 100 },
+      { dimension: "Development Quality", score: 64, fullMark: 100 },
+      { dimension: "Equity & Access", score: 42, fullMark: 100 },
+      { dimension: "Overall Trajectory", score: 54, fullMark: 100 },
+    ],
+    suggestedQuestions: [
+      "Which corridors have the strongest green infrastructure ROI?",
+      "How does QLine ridership correlate with transportation emissions?",
+      "Where are the largest affordable housing gaps vs. heat risk?",
+    ],
+  },
 };
 
 
 // Agent streaming simulation - word-chunked display text
 export const generateAgentStream = (agent: AgentOutput): string[] => {
-  const fullText = `**${agent.agentName}** (about ${(agent.confidence * 100).toFixed(0)}% sure)
-
+  const { role, lens } = getAgentCardHeadings(agent.agentName, agent.committeeRole, agent.metricLens);
+  const lensBlock = lens ? `\n${lens}\n` : "\n";
+  const fullText = `${role}${lensBlock}
 Score: ${agent.score}/100
 
 ${agent.reasoning}

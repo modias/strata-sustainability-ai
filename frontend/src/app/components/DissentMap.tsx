@@ -11,11 +11,12 @@ interface DissentMapProps {
 export function DissentMap({ devilsAdvocate }: DissentMapProps) {
   return (
     <motion.div
+      className="w-full min-w-0"
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.5 }}
     >
-      <Card className="bg-gradient-to-br from-purple-900/20 to-pink-900/20 border-purple-500/30">
+      <Card className="w-full bg-gradient-to-br from-purple-900/20 to-pink-900/20 border-purple-500/30">
         <CardHeader>
           <div className="flex items-start justify-between">
             <div className="flex items-center gap-3">
@@ -23,7 +24,7 @@ export function DissentMap({ devilsAdvocate }: DissentMapProps) {
                 <Swords className="h-5 w-5 text-purple-400" />
               </div>
               <div>
-                <CardTitle className="text-white text-lg">Devil's Advocate Challenge</CardTitle>
+                <CardTitle className="text-white text-lg">{"Devil's Advocate Agent"}</CardTitle>
                 <p className="text-sm text-purple-300 mt-1">Targeting: {devilsAdvocate.targetAgent}</p>
               </div>
             </div>
@@ -57,9 +58,9 @@ export function DissentMap({ devilsAdvocate }: DissentMapProps) {
           {/* Explanation */}
           <div className="border-t border-purple-500/20 pt-4">
             <p className="text-xs text-slate-400 italic">
-              The Devil's Advocate runs after all primary reviews finish, targeting the strongest claim with a specific,
-              sourced counter-argument. This step surfaces hidden assumptions and contested data points that
-              would otherwise stay invisible.
+              This review runs after all primary agents finish, targeting the strongest claim with a specific,
+              sourced counter-argument. It surfaces hidden assumptions and contested data points that would
+              otherwise stay invisible.
             </p>
           </div>
         </CardContent>
