@@ -212,6 +212,9 @@ export function AnalysisView() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [usedMockFallback, setUsedMockFallback] = useState(false);
+  const [historyKey, setHistoryKey] = useState(0);
+
+  const snowflakeHistoryEntityId = entityId ? SNOWFLAKE_ENTITY_ID[entityId] ?? entityId : "";
 
   useEffect(() => {
     if (!entityId) {
@@ -311,6 +314,23 @@ export function AnalysisView() {
 
         await new Promise((resolve) => setTimeout(resolve, 500));
         setShowDevilsAdvocate(true);
+
+        try {
+          if (snowflakeHistoryEntityId) {
+            const res = await fetch(`${API_BASE}/analyze`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ entity_id: snowflakeHistoryEntityId }),
+            });
+            if (!res.ok) {
+              console.warn("Analyze POST failed:", res.status);
+            } else {
+              setHistoryKey((k) => k + 1);
+            }
+          }
+        } catch (e) {
+          console.warn("Analyze POST error:", e);
+        }
 
         await new Promise((resolve) => setTimeout(resolve, 800));
         setShowVerdict(true);
@@ -462,9 +482,7 @@ export function AnalysisView() {
         {showDevilsAdvocate && (
           <div className="mb-8 grid grid-cols-1 lg:grid-cols-2 gap-8 items-start">
             <DissentMap devilsAdvocate={result.devilsAdvocate} />
-            <VerdictHistory
-              entityId={entityId ? (SNOWFLAKE_ENTITY_ID[entityId] ?? entityId) : ""}
-            />
+            <VerdictHistory entityId={snowflakeHistoryEntityId} refreshKey={historyKey} />
           </div>
         )}
 

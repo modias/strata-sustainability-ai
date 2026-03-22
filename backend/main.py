@@ -8,7 +8,12 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-from services.snowflake_client import get_latest_analysis, get_verdict_history, save_cv_results
+from services.snowflake_client import (
+    get_latest_analysis,
+    get_verdict_history,
+    save_cv_results,
+    save_verdict,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -96,6 +101,9 @@ class AnalyzeRequest(BaseModel):
     entity_id: str
 
 
+NEIGHBORHOOD_ENTITY_IDS = frozenset({"anacostia", "phoenix_south", "detroit_midtown"})
+
+
 @app.post("/analyze")
 def analyze(req: AnalyzeRequest):
     """Latest full analysis row for an entity from Snowflake (verdict, scores, agent JSON, judge JSON)."""
@@ -103,6 +111,22 @@ def analyze(req: AnalyzeRequest):
     if not entity_id:
         return {"found": False, "entity_id": "", "data": None}
     data = get_latest_analysis(entity_id)
+
+    try:
+        mode = "neighborhood" if entity_id in NEIGHBORHOOD_ENTITY_IDS else "corporate"
+        save_verdict(
+            target=entity_id,
+            mode=mode,
+            final_score=0.0,
+            verdict=data["verdict"] if data else "UNKNOWN",
+            trajectory=data["trajectory"] if data else "UNKNOWN",
+            agent_scores=data["agent_scores"] if data else [],
+            judge_output=data["judge_output"] if data else {},
+            entity_id=entity_id,
+        )
+    except Exception:
+        logger.exception("save_verdict after analyze failed for %s", entity_id)
+
     if data is None:
         return {"found": False, "entity_id": entity_id, "data": None}
     return {"found": True, "entity_id": entity_id, "data": data}
